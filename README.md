@@ -226,22 +226,6 @@ feature.
        Summary [   0.889s] 15 tests run: 15 passed (1 flaky), 0 skipped
   ```
   
-## AI use policy
-
-The following uses of generative AI tools are OK for this milestone:
-- Debugging a particular compiler error,
-- Generating test cases for an implementation (any AI-generated or other
-  external code must have proper attribution, e.g. via a comment `//from:
-  <source>`), and
-- Asking an AI tool "how do I do this?" or "what does this part of the code
-  do?".
-
-All of the code you submit as part of your implementation (i.e., anything that
-is not a test) must be produced directly by you.  The AI use policy will get
-relaxed over time, this is to ensure that you build a solid baseline before
-using such tools so that you can thrive in this class rather than getting stuck
-later.
-
 ## Grading
 
 To pass this assignment, you need to:
