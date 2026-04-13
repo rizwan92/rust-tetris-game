@@ -12,6 +12,8 @@ use crate::{
 pub struct HardDrop(pub bool);
 
 pub fn setup_status_text(mut commands: Commands) {
+    // Spawn the status text once during startup.
+    // The text begins as "Off" because hard drop is disabled by default.
     commands.spawn(mk_text(
         "Hard Drop: Off",
         (
@@ -35,18 +37,25 @@ pub fn setup_status_text(mut commands: Commands) {
 // for efficiency, use `Changed<HardDrop>` in your queries when it makes sense.
 
 fn toggle_hard_drop(
+    // Read keyboard transitions for this frame.
     keyboard: Res<ButtonInput<KeyCode>>,
+    // Mutably access the single hard-drop toggle component.
     mut hard_drop: Single<&mut HardDrop>,
 ) {
+    // Flip the boolean only on the exact frame when Z is pressed.
     if keyboard.just_pressed(KeyCode::KeyZ) {
         hard_drop.0 = !hard_drop.0;
     }
 }
 
 fn update_manual_drop_gravity(
+    // Read the hard-drop toggle only when it changes.
     hard_drop: Single<&HardDrop, Changed<HardDrop>>,
+    // Update the manual-drop gravity value stored in game state.
     mut state: ResMut<GameState>,
 ) {
+    // When hard drop is enabled, use the large manual drop distance.
+    // Otherwise keep the normal one-row manual drop behavior.
     state.manual_drop_gravity = if hard_drop.0 {
         HARD_DROP_GRAVITY
     } else {
@@ -55,9 +64,12 @@ fn update_manual_drop_gravity(
 }
 
 fn update_status_text(
+    // Read the hard-drop state and the UI text together when the state changes.
     mut status: Single<(&HardDrop, &mut Text), Changed<HardDrop>>,
 ) {
+    // Convert the boolean into a user-friendly label.
     let label = if status.0.0 { "On" } else { "Off" };
+    // Refresh the visible text so the UI matches the stored state.
     status.1.0 = format!("Hard Drop: {label}");
 }
 
@@ -73,6 +85,8 @@ impl Plugin for HardDropPlugin {
                     update_manual_drop_gravity,
                     update_status_text,
                 )
+                    // Keep the systems in a predictable order:
+                    // toggle first, then update the gameplay value, then update the UI text.
                     .chain()
                     .in_set(Game),
             );

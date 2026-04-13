@@ -12,6 +12,24 @@ When you copy a snippet from this file:
 
 The baseline file is the foundation, so the comments here are intentionally very literal.
 
+## Important Sync Note
+
+This baseline file is synced to the validated **baseline solution path**.
+
+That means:
+
+1. the `src/data.rs` snippets are still very close to the current final source
+2. some `src/board.rs` and `src/lib.rs` snippets are intentionally **baseline-only**
+3. later feature docs will replace parts of those baseline snippets on purpose
+
+So if you later compare this file against the fully finished source tree, some functions will look different.
+That is expected.
+The correct workflow is:
+
+1. revert to the starter or baseline state
+2. paste the baseline snippets from this file
+3. then apply later feature docs one by one in order
+
 Keep [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml) at:
 
 ```toml
@@ -35,9 +53,9 @@ File:
 
 ```rust
 fn rotate_90_deg_cw(&self, x: f32, y: f32) -> Cell {
-    // Shift the cell so the rotation center becomes the origin.
+    // Shift the cell so the rotation center becomes the local origin.
     let dx = self.0 as f32 - x;
-    // Shift the cell so the rotation center becomes the origin.
+    // Shift the cell so the rotation center becomes the local origin.
     let dy = self.1 as f32 - y;
     // Apply clockwise rotation: (dx, dy) -> (dy, -dx), then shift back.
     Cell((x + dy).round() as i32, (y - dx).round() as i32)
@@ -48,7 +66,7 @@ fn rotate_90_deg_cw(&self, x: f32, y: f32) -> Cell {
 
 ```rust
 pub fn in_bounds(&self) -> bool {
-    // The tetromino is legal only when every one of its cells is in bounds.
+    // A tetromino is legal only when all of its cells are in bounds.
     self.cells.iter().all(Cell::in_bounds)
 }
 ```
@@ -57,15 +75,14 @@ pub fn in_bounds(&self) -> bool {
 
 ```rust
 pub fn rotate(&mut self) {
-    // The O piece does not change under rotation in this assignment.
+    // The O piece does not visibly change under rotation.
     if self.is_o() {
-        // Exit early for O pieces.
         return;
     }
 
     // Read the current rotation center once.
     let (x, y) = self.center;
-    // Rotate each of the four cells around that center.
+    // Rotate every cell around that same center.
     self.cells = self.cells.map(|cell| cell.rotate_90_deg_cw(x, y));
 }
 ```
@@ -74,7 +91,7 @@ pub fn rotate(&mut self) {
 
 ```rust
 pub fn shift(&mut self, dx: i32, dy: i32) {
-    // Move every tetromino cell by the requested offset.
+    // Move each cell by the requested offset.
     self.cells = self.cells.map(|Cell(x, y)| Cell(x + dx, y + dy));
     // Move the rotation center by the same offset.
     self.center = (self.center.0 + dx as f32, self.center.1 + dy as f32);
@@ -87,7 +104,7 @@ pub fn shift(&mut self, dx: i32, dy: i32) {
 pub fn drop_interval(&self) -> Duration {
     // Clamp the level so we never index past the gravity table.
     let level = usize::min(self.level as usize, Self::MAX_LEVEL - 1);
-    // Convert the frame-based gravity interval into seconds.
+    // Convert the frame-based table entry into a real time duration.
     Duration::from_secs_f32(Self::INTERVALS[level] / Self::FRAMERATE)
 }
 ```
@@ -116,7 +133,25 @@ That means the validated baseline uses:
 - a small `clear_just_spawned` system
 - `(active_tetromino, Active, JustSpawned)` in `spawn_next_tetromino`
 
+## Later-feature note
+
+The current final repository has extra gameplay markers such as `ManualDropped`,
+`HardDropped`, and `CarryGravityTimer`.
+
+Those are **not** part of the baseline target.
+
+So in this file:
+
+- `handle_user_input` is the validated baseline version
+- `spawn_next_tetromino` is the validated baseline version
+- `build_app` is the validated baseline wiring
+
+Later feature docs intentionally replace those parts.
+
 ### Replace `LockdownTimer::start_or_advance`
+
+This is the baseline-only signature.
+Later `hard_drop` work changes the real source to pass an explicit duration.
 
 File:
 - [board.rs](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/src/board.rs)
@@ -140,6 +175,9 @@ fn start_or_advance(&mut self, time: &Time<Fixed>) {
 ```
 
 ### Replace `handle_user_input`
+
+This is the baseline-only input system.
+Later the final source adds extra drop markers for hard-drop timing.
 
 ```rust
 pub fn handle_user_input(
@@ -218,6 +256,9 @@ pub fn handle_user_input(
 ```
 
 ### Add `clear_just_spawned`
+
+This helper exists only in the validated baseline path.
+Later feature work may remove it or fold the behavior into different systems.
 
 ```rust
 pub fn clear_just_spawned(
@@ -341,6 +382,9 @@ pub fn deactivate_if_stuck(
 
 ### Replace `spawn_next_tetromino`
 
+This is the validated baseline spawn flow.
+Later features may replace the final source version with gravity-carry logic instead.
+
 ```rust
 pub fn spawn_next_tetromino(
     // Use commands to spawn/despawn tetromino entities.
@@ -400,6 +444,9 @@ pub fn spawn_next_tetromino(
 ## `src/lib.rs`
 
 ### Update the `Update` systems inside `build_app`
+
+This is the baseline-only wiring.
+Later features can move or replace some systems in the final source tree.
 
 ```rust
 .add_systems(

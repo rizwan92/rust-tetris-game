@@ -13,8 +13,11 @@ pub struct Cell(pub i32, pub i32);
 impl Cell {
     #[allow(unused)] // remove after you use this function
     fn rotate_90_deg_cw(&self, x: f32, y: f32) -> Cell {
+        // Shift the cell so the rotation center becomes the local origin.
         let dx = self.0 as f32 - x;
+        // Shift the cell so the rotation center becomes the local origin.
         let dy = self.1 as f32 - y;
+        // Apply clockwise rotation: (dx, dy) -> (dy, -dx), then shift back.
         Cell((x + dy).round() as i32, (y - dx).round() as i32)
     }
 
@@ -99,6 +102,7 @@ impl Tetromino {
 
     /// Is the tetromino in bounds?
     pub fn in_bounds(&self) -> bool {
+        // A tetromino is legal only when all of its cells are in bounds.
         self.cells.iter().all(Cell::in_bounds)
     }
 
@@ -118,17 +122,22 @@ impl Tetromino {
 
     /// Rotate this tetromino 90 degrees clockwise.
     pub fn rotate(&mut self) {
+        // The O piece does not visibly change under rotation.
         if self.is_o() {
             return;
         }
 
+        // Read the current rotation center once.
         let (x, y) = self.center;
+        // Rotate every cell around that same center.
         self.cells = self.cells.map(|cell| cell.rotate_90_deg_cw(x, y));
     }
 
     /// Shift all the cells in the tetromino by the given amount
     pub fn shift(&mut self, dx: i32, dy: i32) {
+        // Move each cell by the requested offset.
         self.cells = self.cells.map(|Cell(x, y)| Cell(x + dx, y + dy));
+        // Move the rotation center by the same offset.
         self.center = (self.center.0 + dx as f32, self.center.1 + dy as f32);
     }
 }
@@ -198,7 +207,9 @@ impl GameState {
 
     /// Auto-drop interval (i.e., gravity)
     pub fn drop_interval(&self) -> Duration {
+        // Clamp the level so we never index past the gravity table.
         let level = usize::min(self.level as usize, Self::MAX_LEVEL - 1);
+        // Convert the frame-based table entry into a real time duration.
         Duration::from_secs_f32(Self::INTERVALS[level] / Self::FRAMERATE)
     }
 

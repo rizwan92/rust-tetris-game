@@ -52,11 +52,14 @@ pub struct CarryGravityTimer(pub bool);
 impl LockdownTimer {
     // Advance the timer. Start it if it hasn't been started.
     fn start_or_advance(&mut self, duration: Duration, time: &Time<Fixed>) {
+        // Create the timer the first time we discover the piece is stuck.
+        // We use the provided duration so soft lock and hard-drop lock can differ.
         if self.0.is_none() {
             self.0 = Some(Timer::new(duration, TimerMode::Once));
             return;
         }
 
+        // Once the timer exists, advance it by one fixed-step delta.
         if let Some(timer) = &mut self.0 {
             timer.tick(time.delta());
         }
@@ -208,19 +211,27 @@ pub fn setup_board(
 
 /// Handle user input for the purposes of moving and/or rotating the tetromino.
 pub fn handle_user_input(
+    // Use commands so we can attach drop markers to the active piece.
     mut commands: Commands,
+    // Read one-frame keyboard transitions for player input.
     keyboard: Res<ButtonInput<KeyCode>>,
+    // Read the current manual-drop gravity setting from game state.
     state: Res<GameState>,
+    // Mutably access the current active tetromino and its entity id.
     mut active: Query<(Entity, &mut Tetromino), With<Active>>,
+    // Read obstacles so candidate moves can be collision-tested.
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    // Exit when there is no active piece to move.
     let Ok((entity, mut tetromino)) = active.single_mut() else {
         return;
     };
 
     if keyboard.just_pressed(KeyCode::ArrowDown) {
+        // Track whether the player-managed downward move actually changed position.
         let mut moved = false;
 
+        // Repeat downward steps based on the current manual drop gravity setting.
         for _ in 0..state.manual_drop_gravity {
             let mut candidate = *tetromino;
             candidate.shift(0, -1);
@@ -232,6 +243,8 @@ pub fn handle_user_input(
         }
 
         let landed = if moved {
+            // Look one more row down to see whether the piece is now sitting on the floor
+            // or on top of obstacles after the manual drop finished.
             let mut candidate = *tetromino;
             candidate.shift(0, -1);
             crate::there_is_collision(&candidate, obstacles.reborrow())
@@ -240,8 +253,10 @@ pub fn handle_user_input(
         };
 
         if moved {
+            // Remember that the player manually moved this piece downward.
             commands.entity(entity).insert(ManualDropped);
             if landed && state.manual_drop_gravity > SOFT_DROP_GRAVITY {
+                // Remember the special case where the fast manual drop reached the floor.
                 commands.entity(entity).insert(HardDropped);
             }
         }
@@ -279,18 +294,23 @@ pub fn gravity(
     mut active: Query<&mut Tetromino, With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    // Advance the automatic gravity timer every fixed update.
     state.gravity_timer.tick(time.delta());
+    // Exit until the timer says it is time to drop again.
     if !state.gravity_timer.just_finished() {
         return;
     }
 
+    // Exit when there is no active piece to drop.
     let Ok(mut tetromino) = active.single_mut() else {
         return;
     };
 
+    // Try moving the active piece down by exactly one row.
     let mut candidate = *tetromino;
     candidate.shift(0, -1);
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
+        // Commit the gravity move only if the destination is legal.
         *tetromino = candidate;
     }
 }
@@ -304,30 +324,36 @@ pub fn deactivate_if_stuck(
     active: Query<(Entity, &Tetromino, Has<HardDropped>, Has<ManualDropped>), With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    // When there is no active piece, clear the lockdown state and stop.
     let Ok((entity, tetromino, _hard_dropped, manual_dropped)) = active.single() else {
         lockdown.reset();
         return;
     };
 
+    // Check whether the current active piece is blocked one row below.
     let tetromino = *tetromino;
     let mut candidate = tetromino;
     candidate.shift(0, -1);
 
+    // If the piece can still move down, it is not stuck yet.
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
         lockdown.reset();
         return;
     }
 
+    // Manually dropped pieces lock faster than normally landed pieces.
     let duration = if manual_dropped {
         HARD_DROP_LOCKDOWN_DURATION
     } else {
         LOCKDOWN_DURATION
     };
+    // Start or advance the lockdown timer using that duration.
     lockdown.start_or_advance(duration, &time);
     if !lockdown.just_finished() {
         return;
     }
 
+    // Once the timer finishes, turn the tetromino into obstacle blocks.
     commands.entity(entity).despawn();
     for cell in tetromino.cells {
         commands.spawn((
@@ -338,6 +364,7 @@ pub fn deactivate_if_stuck(
             Obstacle,
         ));
     }
+    // Carry the gravity timer only when the piece was manually dropped.
     carry_gravity_timer.0 = manual_dropped;
     lockdown.reset();
 }
@@ -353,30 +380,39 @@ pub fn spawn_next_tetromino(
     next_tetrominoes: Query<Entity, (With<Next>, With<Tetromino>)>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    // Stop when an active piece already exists.
     if active.iter().next().is_some() {
         return;
     }
 
+    // Remove the previous logical Next preview before rebuilding it.
     for entity in &next_tetrominoes {
         commands.entity(entity).despawn();
     }
 
+    // Pull the next playable tetromino from the bag.
     let mut active_tetromino = state.bag.next_tetromino();
+    // Shift it into the board spawn position.
     active_tetromino.shift(4, BOARD_HEIGHT as i32 - 1 - active_tetromino.bounds().top);
 
+    // If the spawn position is already blocked, the game is over.
     if crate::there_is_collision(&active_tetromino, obstacles.reborrow()) {
         commands.trigger(GameOver);
         return;
     }
 
+    // Build the new logical preview from the front of the bag.
     let mut next_tetromino = state.bag.peek();
     next_tetromino.shift(2, 2);
 
+    // Spawn the new active piece and the refreshed Next preview.
     commands.spawn((active_tetromino, Active));
     commands.spawn((next_tetromino, Next));
     if !carry_gravity_timer.0 {
+        // Normally a new piece should start with a fresh gravity timer.
         state.gravity_timer.reset();
     }
+    // Clear the carry flag once the next piece has been spawned.
     carry_gravity_timer.0 = false;
     lockdown.reset();
 }

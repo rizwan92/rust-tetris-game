@@ -62,121 +62,107 @@ File:
 
 ```rust
 pub fn swap_hold(
-    // Read keyboard state for this update tick.
+    // Read keyboard input so we can react when the player presses X.
     keyboard: Res<ButtonInput<KeyCode>>,
-    // Use commands to despawn old logical tetromino entities and spawn new ones.
+    // Use commands to despawn and respawn the logical tetromino entities.
     mut commands: Commands,
-    // Access the bag when we need to consume the next piece.
+    // Access the bag because first hold consumes the current next piece.
     mut state: ResMut<GameState>,
-    // Read the currently active tetromino entity and value.
+    // Read the current active piece and its entity id.
     active: Query<(Entity, &Tetromino), With<Active>>,
-    // Read the currently held tetromino entity and value, if one exists.
+    // Read the current held piece and its entity id, if it exists.
     held: Query<(Entity, &Tetromino), With<Hold>>,
-    // Read the logical next tetromino entity and value.
-    // We need the value too because first hold uses the currently shown Next piece.
+    // Read the logical Next entity and value.
+    // The value matters because first hold uses the currently displayed next piece.
     next_tetrominoes: Query<(Entity, &Tetromino), With<Next>>,
-    // Access obstacles for collision checks.
+    // Access obstacles so we can reject illegal swap results.
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
-    // Only react to the exact frame when X was pressed.
-    // This matches the validated implementation in the real code.
+    // Only react on the exact frame when X was newly pressed.
     if !keyboard.just_pressed(KeyCode::KeyX) {
-        // Exit on all frames where X was not newly pressed.
         return;
     }
 
-    // We cannot hold anything when there is no active piece.
+    // Stop immediately when there is no active piece.
     let Ok((active_entity, active_piece)) = active.single() else {
-        // Exit when nothing is active.
         return;
     };
-
-    // Copy the active piece so we can reuse it after despawning its entity.
     let active_piece = *active_piece;
 
-    // Convert a board-position tetromino into hold-window coordinates.
     let to_hold = |mut tetromino: Tetromino| {
-        // Detect the I piece by checking whether all cells lie on one row or one column.
+        // Detect the I piece by checking whether all cells are on one row or column.
         let is_i = tetromino.cells.iter().all(|cell| cell.0 == tetromino.cells[0].0)
             || tetromino.cells.iter().all(|cell| cell.1 == tetromino.cells[0].1);
-        // I and O pieces need the centered preview position at (2.5, 2.5).
+        // I and O pieces use the centered `(2.5, 2.5)` preview position.
         let target_center = if tetromino.is_o() || is_i {
             (2.5, 2.5)
         } else {
-            // All other tetrominos use the preview center at (2.0, 2.0).
+            // The other pieces use the `(2.0, 2.0)` preview position.
             (2.0, 2.0)
         };
-        // Translate the board piece into the hold-window target center.
+        // Translate the piece from board space into hold-window space.
         tetromino.shift(
             (target_center.0 - tetromino.center.0).round() as i32,
             (target_center.1 - tetromino.center.1).round() as i32,
         );
-        // Return the translated tetromino.
         tetromino
     };
 
-    // Convert a held tetromino back into board coordinates.
     let to_board = |mut tetromino: Tetromino| {
-        // Detect whether the I piece is vertical.
+        // Detect whether the I piece is vertical in the hold window.
         let vertical_i = tetromino
             .cells
             .iter()
             .all(|cell| cell.0 == tetromino.cells[0].0);
-        // Detect whether the I piece is horizontal.
+        // Detect whether the I piece is horizontal in the hold window.
         let horizontal_i = tetromino
             .cells
             .iter()
             .all(|cell| cell.1 == tetromino.cells[0].1);
-        // Use the validated y-shift for each I-orientation case.
+        // Different I orientations need different y-shifts to line up correctly on the board.
         let y_shift = if vertical_i {
             13
         } else if horizontal_i {
             15
         } else {
-            // All non-I pieces use this normal hold-to-board y shift.
+            // All non-I pieces use the normal hold-to-board y shift.
             14
         };
-        // Apply the board translation.
+        // Translate the held piece into board coordinates.
         tetromino.shift(2, y_shift);
-        // Return the translated tetromino.
         tetromino
     };
 
-    // Try to resolve collision by moving upward up to four times.
     let try_resolve = |mut tetromino: Tetromino, obstacles: &mut Query<&Block, With<Obstacle>>| {
-        // Attempt the original position plus four upward kicks.
+        // Try the original placement plus up to four upward kicks.
         for _ in 0..=4 {
-            // Return the candidate immediately when it is legal.
             if !crate::there_is_collision(&tetromino, obstacles.reborrow()) {
-                // Successful placement.
                 return Some(tetromino);
             }
 
-            // Otherwise try one row higher.
+            // Move the candidate up by one row and try again.
             tetromino.shift(0, 1);
         }
 
-        // Give up after the fifth failed attempt.
+        // Give up if all five attempts are illegal.
         None
     };
 
-    // Case 1: there is already a held piece, so swap it back into active play.
     if let Ok((held_entity, held_piece)) = held.single() {
-        // Start from the held tetromino value.
+        // Start from the currently held tetromino value.
         let candidate = *held_piece;
-        // Detect whether this held piece is vertical I.
+        // Detect whether the held piece is a vertical I.
         let vertical_i = candidate
             .cells
             .iter()
             .all(|cell| cell.0 == candidate.cells[0].0);
-        // Detect whether this held piece is horizontal I.
+        // Detect whether the held piece is a horizontal I.
         let horizontal_i = candidate
             .cells
             .iter()
             .all(|cell| cell.1 == candidate.cells[0].1);
-        // Choose the validated board-placement rule for this shape.
+        // Choose the correct board-placement rule for this shape.
         let candidate = if vertical_i || horizontal_i {
-            // I pieces should go through the special hold-to-board helper.
             to_board(candidate)
         } else if candidate.is_o() {
             // O pieces use rounded center alignment.
@@ -196,42 +182,35 @@ pub fn swap_hold(
             candidate
         };
 
-        // Abort the whole swap when the held piece cannot be placed legally.
+        // Abort the swap if the held piece still cannot be placed legally.
         let Some(candidate) = try_resolve(candidate, &mut obstacles) else {
-            // Leave the current state unchanged on failure.
             return;
         };
 
-        // Remove the old active entity.
+        // Replace the active/held pair with the swapped values.
         commands.entity(active_entity).despawn();
-        // Remove the old held entity.
         commands.entity(held_entity).despawn();
-        // Spawn the old active piece in hold coordinates.
         commands.spawn((to_hold(active_piece), Hold));
-        // Spawn the held piece back as the new active piece.
         commands.spawn((candidate, Active));
-        // End the system after a successful swap.
         return;
     }
 
-    // Case 2: there is no held piece yet, so the next bag piece becomes active.
     let Ok((_, next_piece)) = next_tetrominoes.single() else {
-        // Exit if the logical next piece cannot be found.
         return;
     };
-    // Start from the currently displayed logical next piece.
+    // Start from the logical Next tetromino already shown by the game.
     let candidate = *next_piece;
-    // Detect whether this next piece is vertical I.
+    // Detect whether the next piece is a vertical I.
     let vertical_i = candidate
         .cells
         .iter()
         .all(|cell| cell.0 == candidate.cells[0].0);
-    // Detect whether this next piece is horizontal I.
+    // Detect whether the next piece is a horizontal I.
     let horizontal_i = candidate
         .cells
         .iter()
         .all(|cell| cell.1 == candidate.cells[0].1);
-    // Apply the same validated shape-specific placement rules.
+    // Choose the validated placement rule for the first-hold replacement piece.
     let candidate = if vertical_i || horizontal_i {
         // The preview I piece needs a one-cell lift before hold-to-board conversion.
         let mut candidate = candidate;
@@ -255,33 +234,27 @@ pub fn swap_hold(
         candidate
     };
 
-    // Abort without consuming the bag if the candidate cannot be placed.
+    // Abort before consuming the bag if the placement is illegal.
     let Some(candidate) = try_resolve(candidate, &mut obstacles) else {
-        // Leave active, hold, and next unchanged on failure.
         return;
     };
 
-    // Consume the bag only after the placement is confirmed legal.
+    // Consume the bag only after the replacement piece is confirmed legal.
     state.bag.next_tetromino();
 
-    // Remove the old active entity.
+    // Move the active piece into hold and make the candidate active.
     commands.entity(active_entity).despawn();
-    // Move the old active piece into the hold window.
     commands.spawn((to_hold(active_piece), Hold));
-    // Spawn the validated next piece as the new active tetromino.
     commands.spawn((candidate, Active));
 
-    // Refresh the logical next tetromino because the bag has advanced.
+    // Refresh the logical Next piece because the bag front changed.
     for (entity, _) in &next_tetrominoes {
-        // Remove the stale logical preview entity.
         commands.entity(entity).despawn();
     }
 
-    // Build the new preview tetromino from the updated bag front.
+    // Rebuild the preview from the new bag front and move it into preview coordinates.
     let mut next_piece = state.bag.peek();
-    // Shift it into the side-window coordinates.
     next_piece.shift(2, 2);
-    // Spawn the refreshed logical preview tetromino.
     commands.spawn((next_piece, Next));
 }
 ```

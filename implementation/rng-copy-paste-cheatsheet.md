@@ -49,19 +49,14 @@ File:
 
 ```rust
 pub fn from_seed(seed: u64) -> Self {
-    // `seed: u64` is the fixed number that makes the random order reproducible.
-    // Example: if the seed is `727`, the shuffled piece order should be the same every time.
-    // This is what makes deterministic RNG tests possible.
-
-    // Start with an empty bag so the first query forces a refill.
-    let remaining_pieces = vec![];
-    // Create a deterministic small RNG from the provided seed.
-    let rng = SmallRng::seed_from_u64(seed);
-
-    // Return the fully initialized random bag.
+    // `seed: u64` is the fixed number that makes the random order repeat.
+    // Example: using seed `727` should always give the same shuffled order.
+    // That is what makes seeded tests deterministic.
     Self {
-        remaining_pieces,
-        rng,
+        // Start empty so the first peek/pop forces a refill.
+        remaining_pieces: vec![],
+        // Build a reproducible RNG from the provided seed.
+        rng: SmallRng::seed_from_u64(seed),
     }
 }
 ```
@@ -70,13 +65,16 @@ pub fn from_seed(seed: u64) -> Self {
 
 ```rust
 fn refill(&mut self) {
-    // Rebuild the bag with exactly one canonical copy of each tetromino type.
+    // This function should only run when the bag is empty.
+    debug_assert!(self.remaining_pieces.is_empty());
+    // Rebuild the bag with exactly one copy of each tetromino type.
     self.remaining_pieces = ALL_TETROMINO_TYPES
         .into_iter()
         .map(get_tetromino)
         .collect::<Vec<_>>();
 
-    // Shuffle the bag in place using the stored RNG.
+    // Shuffle the vector in place using the stored RNG.
+    // The shuffled order is what later `peek` and `pop` will follow.
     self.remaining_pieces.shuffle(&mut self.rng);
 }
 ```
@@ -85,17 +83,13 @@ fn refill(&mut self) {
 
 ```rust
 fn next_tetromino(&mut self) -> Tetromino {
-    // `&mut self` means this method is allowed to change the bag state.
-    // That matters because taking the next piece removes one piece from the bag.
-    // So this method cannot be `&self`.
-
-    // Refill the bag first when it is empty.
+    // Refill first if there are no pieces left to take.
     if self.remaining_pieces.is_empty() {
-        // Rebuild and shuffle a fresh seven-piece bag.
         self.refill();
     }
 
-    // Pop from the back so the seeded tests match the expected order.
+    // Take from the back so seeded tests match the expected order.
+    // This must stay consistent with `peek`, which uses `last()`.
     self.remaining_pieces
         .pop()
         .expect("bag should contain a tetromino after refill")
@@ -106,17 +100,13 @@ fn next_tetromino(&mut self) -> Tetromino {
 
 ```rust
 fn peek(&mut self) -> Tetromino {
-    // `peek` also uses `&mut self` because it may need to refill an empty bag.
-    // Even though it does not remove a piece, it still may change internal storage first.
-    // That is why the signature is mutable here too.
-
-    // Refill the bag first when it is empty.
+    // Refill first if there are no pieces left to inspect.
     if self.remaining_pieces.is_empty() {
-        // Rebuild and shuffle a fresh seven-piece bag.
         self.refill();
     }
 
-    // Peek at the same back-of-vector element that next_tetromino will pop.
+    // Look at the same back element that `next_tetromino` will remove.
+    // Using `last()` here keeps `peek` and `pop()` in sync.
     *self
         .remaining_pieces
         .last()
@@ -134,30 +124,26 @@ Paste these below the config tests you added in the `config` feature doc.
 #[test]
 #[cfg(all(feature = "config", feature = "rng"))]
 fn load_fixed_seed_config() {
-    // This matches the fixed-seed JSON shape used in the provided test data.
+    // This JSON uses serde's tagged enum shape for `FixedSeed`.
     let json = r#"{"bag":{"FixedSeed":727},"animate_title":true}"#;
-
-    // Load the config from JSON text.
+    // Parse the JSON into a config value.
     let cfg = GameConfig::load(json).expect("config should parse");
-
-    // The bag should deserialize into the fixed-seed variant.
+    // Check that the bag became the right fixed-seed variant.
     assert_eq!(cfg.bag, BagType::FixedSeed(727));
-    // The title animation flag should stay true.
+    // Check that the title flag also parsed correctly.
     assert!(cfg.animate_title);
 }
 
 #[test]
 #[cfg(all(feature = "config", feature = "rng"))]
 fn load_random_seed_config() {
-    // Unit enum variants serialize as a plain string in serde JSON.
+    // Unit enum variants are represented as plain strings in serde JSON.
     let json = r#"{"bag":"RandomSeed","animate_title":false}"#;
-
-    // Load the config from JSON text.
+    // Parse the JSON into a config value.
     let cfg = GameConfig::load(json).expect("config should parse");
-
-    // The bag should deserialize into the random-seed variant.
+    // Check that the random-seed variant was selected.
     assert_eq!(cfg.bag, BagType::RandomSeed);
-    // The title animation flag should be false.
+    // Check that the title flag stayed false.
     assert!(!cfg.animate_title);
 }
 ```

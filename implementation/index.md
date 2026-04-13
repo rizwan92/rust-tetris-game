@@ -16,6 +16,12 @@ The goal is simple:
 - then read the comment directly near that line
 - then understand what that line is doing in plain English
 
+One more sync rule matters:
+
+1. the code snippet in each cheat sheet should match the real Rust source for that feature
+2. the inline comments in the cheat sheet should also exist in the actual source files
+3. if you later revert `src/` and paste from the cheat sheet, you should get the same working code and the same study comments
+
 ## Order
 
 Open and apply the cheat sheets in this exact order:

@@ -33,55 +33,47 @@ File:
 - [score.rs](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/src/score.rs)
 
 ```rust
-fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
-    // `event: On<LinesCleared>` means this function wakes up when a line-clear event happens.
-    // The event carries a number like 1, 2, 3, or 4.
-    // That number tells us how many lines disappeared in one action.
-
-    // `mut state: ResMut<GameState>` means we can update the global game state.
-    // This includes score, level, total lines, and the gravity timer.
-    // We need `mut` because scoring changes stored values.
-
-    // Read how many lines were cleared by this event.
+fn update_score(
+    // Wake up when a line-clear event is triggered.
+    event: On<LinesCleared>,
+    // Mutably access the global game state so score and level can change.
+    mut state: ResMut<GameState>,
+) {
+    // `event` tells us how many lines were cleared in one action.
+    // `state` is the global game state that stores score, level, and timers.
     let lines_cleared = event.0;
-    // The assignment guarantees at most four cleared lines at once.
+
+    // Tetris can clear at most four lines at once.
     assert!(lines_cleared <= 4);
 
-    // Convert the cleared-line count into the scoring multiplier from the spec.
+    // Convert line-count into the assignment's score multiplier table.
     let multiplier = match lines_cleared {
-        // No lines means no score change.
         0 => 0,
-        // Single line clear score.
         1 => 40,
-        // Double line clear score.
         2 => 100,
-        // Triple line clear score.
         3 => 300,
-        // Tetris score.
         4 => 1200,
-        // The assert above should make every other case impossible.
         _ => unreachable!("line clear count must be between 0 and 4"),
     };
 
-    // Apply the score formula: multiplier * (current level + 1).
+    // Score formula from the assignment: multiplier * (level + 1).
     state.score += multiplier * (state.level + 1);
-    // Track total cleared lines across the whole game.
+    // Track the total number of cleared lines across the full game.
     state.lines_cleared += lines_cleared;
-    // Track cleared lines toward the next level threshold.
+    // Track the lines contributing toward the next level-up threshold.
     state.lines_cleared_since_last_level += lines_cleared;
 
-    // Keep leveling up while the accumulated lines still satisfy the next threshold.
+    // Use a loop because one clear could, in theory, cross multiple thresholds.
     while state.lines_cleared_since_last_level >= (state.level + 1) * 10 {
         // Remove the threshold that was just satisfied.
         state.lines_cleared_since_last_level -= (state.level + 1) * 10;
-        // Advance the level by one.
+        // Increase the level by one.
         state.level += 1;
-        // Recompute the drop interval for the new level.
-        // Example: higher levels usually mean a smaller duration between drops.
-        state.gravity_timer.set_duration(state.drop_interval());
-        // Do not reset the timer here in the validated version.
-        // Resetting here changed replay timing and broke later recorded tests.
-        // So we only change the duration and keep the current timer progress.
+        // Recompute gravity for the new level.
+        let interval = state.drop_interval();
+        state.gravity_timer.set_duration(interval);
+        // Do not reset the timer here.
+        // Keeping the current progress matched the validated replay behavior better.
     }
 }
 ```
@@ -90,20 +82,17 @@ fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
 
 ```rust
 fn update_score_text(
-    // Read the score-related game state.
-    // We only need read access here because we are displaying values, not changing them.
+    // Read the latest score-related values.
     state: Res<GameState>,
-    // Access the score text UI node mutably.
-    // We need mutable access because the visible string on screen will be replaced.
+    // Mutably access the HUD text that shows score information.
     mut score_text: Single<&mut Text, With<ScoreMarker>>,
 ) {
-    // Skip work when score-related state has not changed.
+    // Skip extra UI work when the score state did not change.
     if !state.is_changed() {
-        // Leave the existing text alone.
         return;
     }
 
-    // Render score, level, and total cleared lines as a compact multi-line HUD.
+    // Rebuild the HUD text from the latest score, level, and line totals.
     score_text.0 = format!(
         "Score: {}\nLevel: {}\nLines: {}",
         state.score(),

@@ -48,12 +48,12 @@ File:
 ```rust
 pub fn load(json: &str) -> Result<Self, serde_json::Error> {
     // `json: &str` means this function receives raw JSON text.
-    // Example: `{"bag":"Deterministic","animate_title":true}`.
-    // The return type says we either get a `GameConfig` or a JSON parsing error.
+    // Example input: `{"bag":"Deterministic","animate_title":true}`.
+    // We return either a parsed config or a serde parsing error.
 
-    // Ask serde_json to deserialize the whole config from the input string.
-    // This one line is enough because the struct already derives Serialize and Deserialize.
-    // So serde knows how to map the JSON fields into the Rust fields.
+    // Ask serde_json to build the whole `GameConfig` from the JSON text.
+    // This works because the struct already derives `Deserialize`.
+    // So serde knows how to map JSON fields into Rust fields.
     serde_json::from_str(json)
 }
 ```
@@ -66,40 +66,37 @@ Paste these below `default_game_state` and above the `#[cfg(feature = "rng")]` t
 #[test]
 #[cfg(feature = "config")]
 fn load_deterministic_config() {
-    // This JSON matches the deterministic config shape used by the provided test data.
+    // This JSON uses the simple deterministic bag form.
+    // It matches the config style used by the provided test data.
     let json = r#"{"bag":"Deterministic","animate_title":true}"#;
-
-    // Load the config from JSON text.
+    // Parse the JSON into a real `GameConfig`.
     let cfg = GameConfig::load(json).expect("config should parse");
-
-    // The bag should be deterministic.
+    // Check that the bag variant is correct after parsing.
     assert_eq!(cfg.bag, BagType::Deterministic);
-    // The title animation flag should be true.
+    // Check that the title-animation flag stayed true.
     assert!(cfg.animate_title);
 }
 
 #[test]
 #[cfg(feature = "config")]
 fn load_animate_title_false() {
-    // This JSON flips only the title animation flag.
+    // This JSON keeps the same bag but changes the title flag.
     let json = r#"{"bag":"Deterministic","animate_title":false}"#;
-
-    // Load the config from JSON text.
+    // Parse the JSON into a real `GameConfig`.
     let cfg = GameConfig::load(json).expect("config should parse");
-
     // The bag should still be deterministic.
     assert_eq!(cfg.bag, BagType::Deterministic);
-    // The title animation flag should now be false.
+    // The animation flag should now be false.
     assert!(!cfg.animate_title);
 }
 
 #[test]
 #[cfg(feature = "config")]
 fn load_rejects_invalid_json() {
-    // This is intentionally malformed JSON.
+    // This JSON is intentionally broken at the end.
+    // The goal of this test is to make sure invalid config text fails cleanly.
     let json = r#"{"bag":"Deterministic","animate_title":tru"#;
-
-    // Loading invalid JSON should fail.
+    // Invalid JSON should return an error instead of a valid config.
     assert!(GameConfig::load(json).is_err());
 }
 ```
@@ -110,6 +107,7 @@ fn load_rejects_invalid_json() {
   - `{"bag":{"FixedSeed":727},"animate_title":true}`
   - `{"bag":"RandomSeed","animate_title":false}`
 - The provided config files under `test_data/` already use these serde shapes.
+- Once `rng` is enabled, the `src/config.rs` test module should match the extra snippet from the RNG cheat sheet exactly.
 
 ## Test commands
 
