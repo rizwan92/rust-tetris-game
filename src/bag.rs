@@ -42,7 +42,7 @@ impl Bag for DeterministicBag {
 #[cfg(feature = "rng")]
 mod random {
     use super::*;
-    use rand::{SeedableRng, rngs::SmallRng};
+    use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
 
     /// The random tile bag
     #[derive(PartialEq, Debug)]
@@ -53,25 +53,45 @@ mod random {
 
     impl RandomBag {
         /// Create a bag from given starting RNG seed.
-        pub fn from_seed(_seed: u64) -> Self {
-            todo!("Create an empty bag, seed the RNG from the given value.")
+        pub fn from_seed(seed: u64) -> Self {
+            Self {
+                remaining_pieces: vec![],
+                rng: SmallRng::seed_from_u64(seed),
+            }
         }
 
         // Refill the bag if it is empty.  This should create one of each
         // tetromino, shuffle them, and put them in the bag.
         fn refill(&mut self) {
             debug_assert!(self.remaining_pieces.is_empty());
-            todo!()
+            self.remaining_pieces = ALL_TETROMINO_TYPES
+                .into_iter()
+                .map(get_tetromino)
+                .collect::<Vec<_>>();
+            self.remaining_pieces.shuffle(&mut self.rng);
         }
     }
 
     impl Bag for RandomBag {
         fn next_tetromino(&mut self) -> Tetromino {
-            todo!("Get the next tetromino from the bag.  Refill it if necessary")
+            if self.remaining_pieces.is_empty() {
+                self.refill();
+            }
+
+            self.remaining_pieces
+                .pop()
+                .expect("bag should contain a tetromino after refill")
         }
 
         fn peek(&mut self) -> Tetromino {
-            todo!()
+            if self.remaining_pieces.is_empty() {
+                self.refill();
+            }
+
+            *self
+                .remaining_pieces
+                .last()
+                .expect("bag should contain a tetromino after refill")
         }
     }
 

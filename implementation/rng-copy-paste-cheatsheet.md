@@ -2,6 +2,12 @@
 
 Use this file after config is complete.
 
+## Commenting Rule For This File
+
+- RNG code is easy to misunderstand, so the comments explain the order very carefully
+- parameter comments explain what seed values and bag state mean
+- comments inside the methods explain why `pop()` and `last()` must match each other
+
 ## Enable the feature
 
 Set [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml) to:
@@ -18,6 +24,7 @@ This order keeps your docs cumulative, even though `rng` technically depends onl
 - implements seeded and unseeded random bags
 - makes seeded test sequences deterministic
 - extends config tests to cover the new JSON bag shapes
+- explains why the order of `shuffle`, `last`, and `pop` must match
 
 ## `src/bag.rs`
 
@@ -42,6 +49,10 @@ File:
 
 ```rust
 pub fn from_seed(seed: u64) -> Self {
+    // `seed: u64` is the fixed number that makes the random order reproducible.
+    // Example: if the seed is `727`, the shuffled piece order should be the same every time.
+    // This is what makes deterministic RNG tests possible.
+
     // Start with an empty bag so the first query forces a refill.
     let remaining_pieces = vec![];
     // Create a deterministic small RNG from the provided seed.
@@ -74,6 +85,10 @@ fn refill(&mut self) {
 
 ```rust
 fn next_tetromino(&mut self) -> Tetromino {
+    // `&mut self` means this method is allowed to change the bag state.
+    // That matters because taking the next piece removes one piece from the bag.
+    // So this method cannot be `&self`.
+
     // Refill the bag first when it is empty.
     if self.remaining_pieces.is_empty() {
         // Rebuild and shuffle a fresh seven-piece bag.
@@ -91,6 +106,10 @@ fn next_tetromino(&mut self) -> Tetromino {
 
 ```rust
 fn peek(&mut self) -> Tetromino {
+    // `peek` also uses `&mut self` because it may need to refill an empty bag.
+    // Even though it does not remove a piece, it still may change internal storage first.
+    // That is why the signature is mutable here too.
+
     // Refill the bag first when it is empty.
     if self.remaining_pieces.is_empty() {
         // Rebuild and shuffle a fresh seven-piece bag.

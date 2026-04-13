@@ -2,6 +2,12 @@
 
 Use this file after collision is complete and your preview/active spawning already works.
 
+## Commenting Rule For This File
+
+- hold is the most timing-sensitive feature, so the comments are intentionally extra literal
+- changed parameters are explained directly in the function signature
+- if one line looks strange, read the comment above it before changing it
+
 ## Enable the feature
 
 Set [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml) to:
@@ -18,16 +24,36 @@ enabled_features = ["config", "collision", "score", "rng", "hard_drop", "hold"]
 - resolves spawn collisions by kicking upward up to 4 times
 - updates the logical `Next` tetromino when the bag is consumed during first hold
 
-## Coordinate rule you must keep
+## Coordinate rules you must keep
 
-Use these exact translations:
+Use these validated rules:
 
-- active board piece -> hold window: `shift(-2, -16)`
-- hold window piece -> active board: `shift(2, 16)`
-
-This matches the coordinates the provided hold tests expect.
+- board piece -> hold window:
+  - center `(2.5, 2.5)` for `I` and `O`
+  - center `(2.0, 2.0)` for every other piece
+- hold piece -> board:
+  - `I` uses a different `y` shift depending on whether it is horizontal or vertical
+  - `O` uses rounded center alignment
+  - `T`, `L`, `J`, `S`, `Z` use floored center alignment
+- if there is no held piece yet:
+  - use the currently displayed logical `Next` tetromino as the source
+  - do not rebuild that source from scratch before the swap
 
 ## `src/hold.rs`
+
+### Update `HoldPlugin`
+
+Use `PostUpdate` in the validated version:
+
+```rust
+impl Plugin for HoldPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(Startup, setup_hold_window.in_set(Game))
+            .add_systems(PostUpdate, swap_hold.in_set(Game))
+            .add_systems(PostUpdate, redraw_side_board::<Hold>.in_set(Game));
+    }
+}
+```
 
 ### Replace `swap_hold`
 
@@ -36,7 +62,7 @@ File:
 
 ```rust
 pub fn swap_hold(
-    // Read keyboard transitions for this fixed-update tick.
+    // Read keyboard state for this update tick.
     keyboard: Res<ButtonInput<KeyCode>>,
     // Use commands to despawn old logical tetromino entities and spawn new ones.
     mut commands: Commands,
@@ -46,14 +72,16 @@ pub fn swap_hold(
     active: Query<(Entity, &Tetromino), With<Active>>,
     // Read the currently held tetromino entity and value, if one exists.
     held: Query<(Entity, &Tetromino), With<Hold>>,
-    // Read the logical next tetromino entity so we can refresh it when the bag advances.
-    next_tetrominoes: Query<Entity, (With<Next>, With<Tetromino>)>,
+    // Read the logical next tetromino entity and value.
+    // We need the value too because first hold uses the currently shown Next piece.
+    next_tetrominoes: Query<(Entity, &Tetromino), With<Next>>,
     // Access obstacles for collision checks.
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
-    // Only react when X is pressed.
+    // Only react to the exact frame when X was pressed.
+    // This matches the validated implementation in the real code.
     if !keyboard.just_pressed(KeyCode::KeyX) {
-        // Exit immediately on all other frames.
+        // Exit on all frames where X was not newly pressed.
         return;
     }
 
@@ -68,16 +96,48 @@ pub fn swap_hold(
 
     // Convert a board-position tetromino into hold-window coordinates.
     let to_hold = |mut tetromino: Tetromino| {
-        // Shift from board coordinates into hold-window coordinates.
-        tetromino.shift(-2, -16);
+        // Detect the I piece by checking whether all cells lie on one row or one column.
+        let is_i = tetromino.cells.iter().all(|cell| cell.0 == tetromino.cells[0].0)
+            || tetromino.cells.iter().all(|cell| cell.1 == tetromino.cells[0].1);
+        // I and O pieces need the centered preview position at (2.5, 2.5).
+        let target_center = if tetromino.is_o() || is_i {
+            (2.5, 2.5)
+        } else {
+            // All other tetrominos use the preview center at (2.0, 2.0).
+            (2.0, 2.0)
+        };
+        // Translate the board piece into the hold-window target center.
+        tetromino.shift(
+            (target_center.0 - tetromino.center.0).round() as i32,
+            (target_center.1 - tetromino.center.1).round() as i32,
+        );
         // Return the translated tetromino.
         tetromino
     };
 
     // Convert a held tetromino back into board coordinates.
     let to_board = |mut tetromino: Tetromino| {
-        // Shift from hold-window coordinates back into board coordinates.
-        tetromino.shift(2, 16);
+        // Detect whether the I piece is vertical.
+        let vertical_i = tetromino
+            .cells
+            .iter()
+            .all(|cell| cell.0 == tetromino.cells[0].0);
+        // Detect whether the I piece is horizontal.
+        let horizontal_i = tetromino
+            .cells
+            .iter()
+            .all(|cell| cell.1 == tetromino.cells[0].1);
+        // Use the validated y-shift for each I-orientation case.
+        let y_shift = if vertical_i {
+            13
+        } else if horizontal_i {
+            15
+        } else {
+            // All non-I pieces use this normal hold-to-board y shift.
+            14
+        };
+        // Apply the board translation.
+        tetromino.shift(2, y_shift);
         // Return the translated tetromino.
         tetromino
     };
@@ -102,8 +162,39 @@ pub fn swap_hold(
 
     // Case 1: there is already a held piece, so swap it back into active play.
     if let Ok((held_entity, held_piece)) = held.single() {
-        // Translate the held piece back into board coordinates.
-        let candidate = to_board(*held_piece);
+        // Start from the held tetromino value.
+        let candidate = *held_piece;
+        // Detect whether this held piece is vertical I.
+        let vertical_i = candidate
+            .cells
+            .iter()
+            .all(|cell| cell.0 == candidate.cells[0].0);
+        // Detect whether this held piece is horizontal I.
+        let horizontal_i = candidate
+            .cells
+            .iter()
+            .all(|cell| cell.1 == candidate.cells[0].1);
+        // Choose the validated board-placement rule for this shape.
+        let candidate = if vertical_i || horizontal_i {
+            // I pieces should go through the special hold-to-board helper.
+            to_board(candidate)
+        } else if candidate.is_o() {
+            // O pieces use rounded center alignment.
+            let mut candidate = candidate;
+            candidate.shift(
+                (active_piece.center.0 - candidate.center.0).round() as i32,
+                (active_piece.center.1 - candidate.center.1).round() as i32,
+            );
+            candidate
+        } else {
+            // The other pieces use floored center alignment.
+            let mut candidate = candidate;
+            candidate.shift(
+                (active_piece.center.0 - candidate.center.0).floor() as i32,
+                (active_piece.center.1 - candidate.center.1).floor() as i32,
+            );
+            candidate
+        };
 
         // Abort the whole swap when the held piece cannot be placed legally.
         let Some(candidate) = try_resolve(candidate, &mut obstacles) else {
@@ -124,9 +215,45 @@ pub fn swap_hold(
     }
 
     // Case 2: there is no held piece yet, so the next bag piece becomes active.
-    let mut candidate = state.bag.peek();
-    // Move the peeked piece into the standard board spawn position.
-    candidate.shift(4, BOARD_HEIGHT as i32 - 1 - candidate.bounds().top);
+    let Ok((_, next_piece)) = next_tetrominoes.single() else {
+        // Exit if the logical next piece cannot be found.
+        return;
+    };
+    // Start from the currently displayed logical next piece.
+    let candidate = *next_piece;
+    // Detect whether this next piece is vertical I.
+    let vertical_i = candidate
+        .cells
+        .iter()
+        .all(|cell| cell.0 == candidate.cells[0].0);
+    // Detect whether this next piece is horizontal I.
+    let horizontal_i = candidate
+        .cells
+        .iter()
+        .all(|cell| cell.1 == candidate.cells[0].1);
+    // Apply the same validated shape-specific placement rules.
+    let candidate = if vertical_i || horizontal_i {
+        // The preview I piece needs a one-cell lift before hold-to-board conversion.
+        let mut candidate = candidate;
+        candidate.shift(0, 1);
+        to_board(candidate)
+    } else if candidate.is_o() {
+        // O pieces use rounded center alignment.
+        let mut candidate = candidate;
+        candidate.shift(
+            (active_piece.center.0 - candidate.center.0).round() as i32,
+            (active_piece.center.1 - candidate.center.1).round() as i32,
+        );
+        candidate
+    } else {
+        // The other pieces use floored center alignment.
+        let mut candidate = candidate;
+        candidate.shift(
+            (active_piece.center.0 - candidate.center.0).floor() as i32,
+            (active_piece.center.1 - candidate.center.1).floor() as i32,
+        );
+        candidate
+    };
 
     // Abort without consuming the bag if the candidate cannot be placed.
     let Some(candidate) = try_resolve(candidate, &mut obstacles) else {
@@ -134,7 +261,7 @@ pub fn swap_hold(
         return;
     };
 
-    // Consume the same next piece that we just validated via peek().
+    // Consume the bag only after the placement is confirmed legal.
     state.bag.next_tetromino();
 
     // Remove the old active entity.
@@ -145,7 +272,7 @@ pub fn swap_hold(
     commands.spawn((candidate, Active));
 
     // Refresh the logical next tetromino because the bag has advanced.
-    for entity in &next_tetrominoes {
+    for (entity, _) in &next_tetrominoes {
         // Remove the stale logical preview entity.
         commands.entity(entity).despawn();
     }
@@ -162,8 +289,10 @@ pub fn swap_hold(
 ## Notes
 
 - Do not eagerly consume the bag before you know the replacement active piece can be placed.
-- The hold tests expect the active piece moved into hold to preserve its board-relative shape, not reset to canonical local coordinates.
-- This system is registered in `FixedUpdate`, so use `just_pressed` exactly once per swap trigger.
+- The validated version of this feature runs in `PostUpdate`.
+- The hold tests expect the hold preview to preserve the current orientation, but to be re-centered into the hold window.
+- The first-hold path should use the logical `Next` tetromino already on screen.
+- The swap logic is shape-sensitive, especially for `I` and `O`.
 
 ## Test commands
 

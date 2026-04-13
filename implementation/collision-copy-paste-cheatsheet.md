@@ -2,6 +2,12 @@
 
 Use this file after baseline and config are complete.
 
+## Commenting Rule For This File
+
+- collision logic can feel abstract at first, so the comments are written very literally
+- parameter comments explain what enters the function
+- body comments explain what each pass over the data is doing
+
 ## Enable the feature
 
 Set [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml) to:
@@ -17,6 +23,7 @@ enabled_features = ["config", "collision"]
 - turns full obstacle rows into cleared lines
 - applies naive gravity after line clears
 - sets up a future hook for score updates with `LinesCleared`
+- explains each changed line in simple English near the snippet
 
 ## `src/collision.rs`
 

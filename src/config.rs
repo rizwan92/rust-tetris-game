@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{bag::*, data::*};
 
 /// Game configuration to read from the user or from the tests.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct GameConfig {
     /// The type of bag for this game.
     pub bag: BagType,
@@ -31,8 +31,8 @@ impl GameConfig {
 
     #[cfg(feature = "config")]
     /// Read a configuration from given JSON data.
-    pub fn load(_json: &str) -> Result<Self, serde_json::Error> {
-        todo!()
+    pub fn load(json: &str) -> Result<Self, serde_json::Error> {
+        serde_json::from_str(json)
     }
 }
 
@@ -103,6 +103,31 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "config")]
+    fn load_deterministic_config() {
+        let json = r#"{"bag":"Deterministic","animate_title":true}"#;
+        let cfg = GameConfig::load(json).expect("config should parse");
+        assert_eq!(cfg.bag, BagType::Deterministic);
+        assert!(cfg.animate_title);
+    }
+
+    #[test]
+    #[cfg(feature = "config")]
+    fn load_animate_title_false() {
+        let json = r#"{"bag":"Deterministic","animate_title":false}"#;
+        let cfg = GameConfig::load(json).expect("config should parse");
+        assert_eq!(cfg.bag, BagType::Deterministic);
+        assert!(!cfg.animate_title);
+    }
+
+    #[test]
+    #[cfg(feature = "config")]
+    fn load_rejects_invalid_json() {
+        let json = r#"{"bag":"Deterministic","animate_title":tru"#;
+        assert!(GameConfig::load(json).is_err());
+    }
+
+    #[test]
     #[cfg(feature = "rng")]
     fn bag_creation() {
         let cfg = GameConfig {
@@ -138,5 +163,23 @@ mod tests {
             (state1.bag.as_ref() as &dyn Any).downcast_ref::<RandomBag>(),
             (state2.bag.as_ref() as &dyn Any).downcast_ref::<RandomBag>()
         );
+    }
+
+    #[test]
+    #[cfg(all(feature = "config", feature = "rng"))]
+    fn load_fixed_seed_config() {
+        let json = r#"{"bag":{"FixedSeed":727},"animate_title":true}"#;
+        let cfg = GameConfig::load(json).expect("config should parse");
+        assert_eq!(cfg.bag, BagType::FixedSeed(727));
+        assert!(cfg.animate_title);
+    }
+
+    #[test]
+    #[cfg(all(feature = "config", feature = "rng"))]
+    fn load_random_seed_config() {
+        let json = r#"{"bag":"RandomSeed","animate_title":false}"#;
+        let cfg = GameConfig::load(json).expect("config should parse");
+        assert_eq!(cfg.bag, BagType::RandomSeed);
+        assert!(!cfg.animate_title);
     }
 }

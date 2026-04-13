@@ -2,6 +2,12 @@
 
 Use this file after baseline is complete.
 
+## Commenting Rule For This File
+
+- the comments inside each Rust snippet explain the changed lines in simple English
+- when the function signature changes, the parameter lines are also explained
+- keep the comments while studying, even if you remove them later
+
 ## Enable the feature
 
 Set [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml) to:
@@ -16,6 +22,7 @@ enabled_features = ["config"]
 - makes `GameConfig` serializable/deserializable
 - implements `GameConfig::load`
 - adds the unit tests the assignment explicitly expects
+- explains the changed lines directly in the snippets so they are easier to paste and study
 
 ## `src/config.rs`
 
@@ -40,7 +47,13 @@ File:
 
 ```rust
 pub fn load(json: &str) -> Result<Self, serde_json::Error> {
+    // `json: &str` means this function receives raw JSON text.
+    // Example: `{"bag":"Deterministic","animate_title":true}`.
+    // The return type says we either get a `GameConfig` or a JSON parsing error.
+
     // Ask serde_json to deserialize the whole config from the input string.
+    // This one line is enough because the struct already derives Serialize and Deserialize.
+    // So serde knows how to map the JSON fields into the Rust fields.
     serde_json::from_str(json)
 }
 ```

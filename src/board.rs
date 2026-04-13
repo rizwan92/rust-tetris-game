@@ -19,7 +19,10 @@ pub struct Board {
 pub const TILE_SIDE_LEN: f32 = 40.0;
 
 /// Amount of time before a tile is locked.
-pub const LOCKDOWN_DURATION: Duration = GameState::initial_drop_interval();
+pub const LOCKDOWN_DURATION: Duration = Duration::from_millis(2600);
+
+/// Amount of time before a fast-dropped tile is locked.
+pub const HARD_DROP_LOCKDOWN_DURATION: Duration = Duration::from_millis(800);
 
 /// An event signalling that the game is over.
 #[derive(Event)]
@@ -41,11 +44,22 @@ pub struct Block {
 #[allow(dead_code)] // remove after your implementation
 pub struct LockdownTimer(Option<Timer>);
 
+/// Whether the next spawned piece should inherit the current gravity timer.
+#[derive(Resource, Default)]
+pub struct CarryGravityTimer(pub bool);
+
 #[allow(dead_code)] // remove after your implementation
 impl LockdownTimer {
     // Advance the timer. Start it if it hasn't been started.
-    fn start_or_advance(&mut self, _time: Res<Time<Fixed>>) {
-        todo!()
+    fn start_or_advance(&mut self, duration: Duration, time: &Time<Fixed>) {
+        if self.0.is_none() {
+            self.0 = Some(Timer::new(duration, TimerMode::Once));
+            return;
+        }
+
+        if let Some(timer) = &mut self.0 {
+            timer.tick(time.delta());
+        }
     }
 
     // Has this timer just gone off?
@@ -189,35 +203,209 @@ pub fn setup_board(
 
     commands.add_observer(exit_on_game_over);
     commands.insert_resource(LockdownTimer(None));
+    commands.insert_resource(CarryGravityTimer::default());
 }
 
 /// Handle user input for the purposes of moving and/or rotating the tetromino.
-pub fn handle_user_input() {}
+pub fn handle_user_input(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    state: Res<GameState>,
+    mut active: Query<(Entity, &mut Tetromino), With<Active>>,
+    mut obstacles: Query<&Block, With<Obstacle>>,
+) {
+    let Ok((entity, mut tetromino)) = active.single_mut() else {
+        return;
+    };
+
+    if keyboard.just_pressed(KeyCode::ArrowDown) {
+        let mut moved = false;
+
+        for _ in 0..state.manual_drop_gravity {
+            let mut candidate = *tetromino;
+            candidate.shift(0, -1);
+            if crate::there_is_collision(&candidate, obstacles.reborrow()) {
+                break;
+            }
+            moved = true;
+            *tetromino = candidate;
+        }
+
+        let landed = if moved {
+            let mut candidate = *tetromino;
+            candidate.shift(0, -1);
+            crate::there_is_collision(&candidate, obstacles.reborrow())
+        } else {
+            false
+        };
+
+        if moved {
+            commands.entity(entity).insert(ManualDropped);
+            if landed && state.manual_drop_gravity > SOFT_DROP_GRAVITY {
+                commands.entity(entity).insert(HardDropped);
+            }
+        }
+    }
+
+    if keyboard.just_pressed(KeyCode::ArrowLeft) {
+        let mut candidate = *tetromino;
+        candidate.shift(-1, 0);
+        if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
+            *tetromino = candidate;
+        }
+    }
+
+    if keyboard.just_pressed(KeyCode::ArrowRight) {
+        let mut candidate = *tetromino;
+        candidate.shift(1, 0);
+        if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
+            *tetromino = candidate;
+        }
+    }
+
+    if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::Space) {
+        let mut candidate = *tetromino;
+        candidate.rotate();
+        if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
+            *tetromino = candidate;
+        }
+    }
+}
 
 /// Drop the piece whenever the gravity timer goes off
-pub fn gravity() {}
+pub fn gravity(
+    time: Res<Time<Fixed>>,
+    mut state: ResMut<GameState>,
+    mut active: Query<&mut Tetromino, With<Active>>,
+    mut obstacles: Query<&Block, With<Obstacle>>,
+) {
+    state.gravity_timer.tick(time.delta());
+    if !state.gravity_timer.just_finished() {
+        return;
+    }
+
+    let Ok(mut tetromino) = active.single_mut() else {
+        return;
+    };
+
+    let mut candidate = *tetromino;
+    candidate.shift(0, -1);
+    if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
+        *tetromino = candidate;
+    }
+}
 
 /// Check if the active tetromino cannot move down. If so, deactivate it.
-pub fn deactivate_if_stuck() {}
+pub fn deactivate_if_stuck(
+    mut commands: Commands,
+    time: Res<Time<Fixed>>,
+    mut lockdown: ResMut<LockdownTimer>,
+    mut carry_gravity_timer: ResMut<CarryGravityTimer>,
+    active: Query<(Entity, &Tetromino, Has<HardDropped>, Has<ManualDropped>), With<Active>>,
+    mut obstacles: Query<&Block, With<Obstacle>>,
+) {
+    let Ok((entity, tetromino, _hard_dropped, manual_dropped)) = active.single() else {
+        lockdown.reset();
+        return;
+    };
+
+    let tetromino = *tetromino;
+    let mut candidate = tetromino;
+    candidate.shift(0, -1);
+
+    if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
+        lockdown.reset();
+        return;
+    }
+
+    let duration = if manual_dropped {
+        HARD_DROP_LOCKDOWN_DURATION
+    } else {
+        LOCKDOWN_DURATION
+    };
+    lockdown.start_or_advance(duration, &time);
+    if !lockdown.just_finished() {
+        return;
+    }
+
+    commands.entity(entity).despawn();
+    for cell in tetromino.cells {
+        commands.spawn((
+            Block {
+                cell,
+                color: tetromino.color,
+            },
+            Obstacle,
+        ));
+    }
+    carry_gravity_timer.0 = manual_dropped;
+    lockdown.reset();
+}
 
 /// Spawn the next tetromino if there is no active tetromino.  This should also
 /// update the next tetromino window.
-pub fn spawn_next_tetromino() {}
+pub fn spawn_next_tetromino(
+    mut commands: Commands,
+    mut state: ResMut<GameState>,
+    mut lockdown: ResMut<LockdownTimer>,
+    mut carry_gravity_timer: ResMut<CarryGravityTimer>,
+    active: Query<(), (With<Active>, With<Tetromino>)>,
+    next_tetrominoes: Query<Entity, (With<Next>, With<Tetromino>)>,
+    mut obstacles: Query<&Block, With<Obstacle>>,
+) {
+    if active.iter().next().is_some() {
+        return;
+    }
+
+    for entity in &next_tetrominoes {
+        commands.entity(entity).despawn();
+    }
+
+    let mut active_tetromino = state.bag.next_tetromino();
+    active_tetromino.shift(4, BOARD_HEIGHT as i32 - 1 - active_tetromino.bounds().top);
+
+    if crate::there_is_collision(&active_tetromino, obstacles.reborrow()) {
+        commands.trigger(GameOver);
+        return;
+    }
+
+    let mut next_tetromino = state.bag.peek();
+    next_tetromino.shift(2, 2);
+
+    commands.spawn((active_tetromino, Active));
+    commands.spawn((next_tetromino, Next));
+    if !carry_gravity_timer.0 {
+        state.gravity_timer.reset();
+    }
+    carry_gravity_timer.0 = false;
+    lockdown.reset();
+}
 
 /// Redraw the board.
 pub fn redraw_board(
     mut commands: Commands,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    _tetrominoes: Query<&Tetromino, With<Active>>,
-    _obstacles: Query<&Block, With<Obstacle>>,
+    tetrominoes: Query<&Tetromino, With<Active>>,
+    obstacles: Query<&Block, With<Obstacle>>,
     mut board: ResMut<Board>,
 ) {
     // you just need to populate this map (see the loop at the end)
     // you'll also need to make it mutable
-    let colors = HashMap::<Entity, Color>::new();
+    let mut colors = HashMap::<Entity, Color>::new();
 
-    // TODO: light up the active tetromino
-    // TODO: add the obstacles
+    for tetromino in &tetrominoes {
+        for cell in tetromino.cells.iter().copied().filter(Cell::is_visible) {
+            let entity = board.cells[cell.1 as usize][cell.0 as usize];
+            colors.insert(entity, tetromino.color);
+        }
+    }
+
+    for block in &obstacles {
+        if block.cell.is_visible() {
+            let entity = board.cells[block.cell.1 as usize][block.cell.0 as usize];
+            colors.insert(entity, block.color);
+        }
+    }
 
     // re-draw the whole board
     for entity in board.cells.iter_mut().flat_map(|row| row.iter_mut()) {
@@ -229,13 +417,26 @@ pub fn redraw_board(
 
 /// Redraw the side board with the given marker component.
 pub fn redraw_side_board<Marker: Component>(
-    _commands: Commands,
-    _materials: ResMut<Assets<ColorMaterial>>,
-    _side_board: Query<(&mut Block, Entity), With<Marker>>,
+    mut commands: Commands,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut side_board: Query<(&mut Block, Entity), With<Marker>>,
     tetromino: Option<Single<&Tetromino, With<Marker>>>,
 ) {
-    if let Some(_t) = tetromino {
-        todo!("add the drawing code here to update side_board")
+    for (mut block, entity) in &mut side_board {
+        let color = if let Some(t) = tetromino.as_ref() {
+            if t.cells.contains(&block.cell) {
+                t.color
+            } else {
+                BG_COLOR
+            }
+        } else {
+            BG_COLOR
+        };
+
+        block.color = color;
+        commands
+            .entity(entity)
+            .insert(MeshMaterial2d(materials.add(color)));
     }
 }
 

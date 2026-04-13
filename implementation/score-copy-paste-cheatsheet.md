@@ -2,6 +2,12 @@
 
 Use this file after collision is complete.
 
+## Commenting Rule For This File
+
+- this file explains both the math and the timer updates in simple words
+- comments on parameters tell you what comes into the function
+- comments inside the loop explain why level-up logic is written as a `while`
+
 ## Enable the feature
 
 Set [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml) to:
@@ -17,6 +23,7 @@ enabled_features = ["config", "collision", "score"]
 - levels up according to the assignment threshold
 - updates the gravity timer when level changes
 - shows score, level, and total lines in the UI
+- keeps the comments very literal so you can study the math line by line
 
 ## `src/score.rs`
 
@@ -27,6 +34,14 @@ File:
 
 ```rust
 fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
+    // `event: On<LinesCleared>` means this function wakes up when a line-clear event happens.
+    // The event carries a number like 1, 2, 3, or 4.
+    // That number tells us how many lines disappeared in one action.
+
+    // `mut state: ResMut<GameState>` means we can update the global game state.
+    // This includes score, level, total lines, and the gravity timer.
+    // We need `mut` because scoring changes stored values.
+
     // Read how many lines were cleared by this event.
     let lines_cleared = event.0;
     // The assignment guarantees at most four cleared lines at once.
@@ -61,10 +76,12 @@ fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
         state.lines_cleared_since_last_level -= (state.level + 1) * 10;
         // Advance the level by one.
         state.level += 1;
-        // Update gravity to match the new level.
+        // Recompute the drop interval for the new level.
+        // Example: higher levels usually mean a smaller duration between drops.
         state.gravity_timer.set_duration(state.drop_interval());
-        // Reset the timer so the new speed starts cleanly.
-        state.gravity_timer.reset();
+        // Do not reset the timer here in the validated version.
+        // Resetting here changed replay timing and broke later recorded tests.
+        // So we only change the duration and keep the current timer progress.
     }
 }
 ```
@@ -74,8 +91,10 @@ fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
 ```rust
 fn update_score_text(
     // Read the score-related game state.
+    // We only need read access here because we are displaying values, not changing them.
     state: Res<GameState>,
     // Access the score text UI node mutably.
+    // We need mutable access because the visible string on screen will be replaced.
     mut score_text: Single<&mut Text, With<ScoreMarker>>,
 ) {
     // Skip work when score-related state has not changed.

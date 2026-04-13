@@ -2,6 +2,16 @@
 
 Use this file for the baseline feature only.
 
+## Commenting Rule For This File
+
+When you copy a snippet from this file:
+
+1. keep the comments with the code
+2. read the comments on the function parameters too
+3. treat the comments as the explanation of why that exact line exists
+
+The baseline file is the foundation, so the comments here are intentionally very literal.
+
 Keep [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml) at:
 
 ```toml
@@ -82,7 +92,29 @@ pub fn drop_interval(&self) -> Duration {
 }
 ```
 
+### Add `JustSpawned` right after `Active`
+
+This correction came from validating the snippets in the real codebase.
+
+```rust
+/// Whether this active tetromino was spawned this frame
+#[derive(Component, Copy, Clone)]
+pub struct JustSpawned;
+```
+
 ## `src/board.rs`
+
+## Validation correction
+
+When I tested the pasted baseline against the real app, one extra correction was needed:
+
+- newly spawned active pieces should ignore movement input for one update
+
+That means the validated baseline uses:
+
+- `Query<&mut Tetromino, (With<Active>, Without<JustSpawned>)>` in `handle_user_input`
+- a small `clear_just_spawned` system
+- `(active_tetromino, Active, JustSpawned)` in `spawn_next_tetromino`
 
 ### Replace `LockdownTimer::start_or_advance`
 
@@ -115,8 +147,8 @@ pub fn handle_user_input(
     keyboard: Res<ButtonInput<KeyCode>>,
     // Read manual-drop gravity from the game state.
     state: Res<GameState>,
-    // Access the currently active tetromino mutably.
-    mut active: Query<&mut Tetromino, With<Active>>,
+    // Access the currently active tetromino mutably, but skip brand-new spawns for one frame.
+    mut active: Query<&mut Tetromino, (With<Active>, Without<JustSpawned>)>,
     // Access obstacles for collision checks.
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
@@ -181,6 +213,22 @@ pub fn handle_user_input(
             // Store the legal rotated candidate.
             *tetromino = candidate;
         }
+    }
+}
+```
+
+### Add `clear_just_spawned`
+
+```rust
+pub fn clear_just_spawned(
+    // Use commands so we can remove the one-frame spawn marker.
+    mut commands: Commands,
+    // Read every newly spawned active tetromino.
+    fresh: Query<Entity, With<JustSpawned>>,
+) {
+    // Remove the marker after input had one frame to ignore the fresh piece.
+    for entity in &fresh {
+        commands.entity(entity).remove::<JustSpawned>();
     }
 }
 ```
@@ -338,8 +386,8 @@ pub fn spawn_next_tetromino(
     // Shift the preview piece into the 5x5 side window coordinates.
     next_tetromino.shift(2, 2);
 
-    // Spawn the active tetromino entity.
-    commands.spawn((active_tetromino, Active));
+    // Spawn the active tetromino entity with one-frame input protection.
+    commands.spawn((active_tetromino, Active, JustSpawned));
     // Spawn the logical preview tetromino entity.
     commands.spawn((next_tetromino, Next));
     // Reset gravity so the new piece starts with a fresh interval.
@@ -347,6 +395,24 @@ pub fn spawn_next_tetromino(
     // Reset lockdown state for the new active piece.
     lockdown.reset();
 }
+```
+
+## `src/lib.rs`
+
+### Update the `Update` systems inside `build_app`
+
+```rust
+.add_systems(
+    Update,
+    (
+        handle_user_input,
+        clear_just_spawned,
+        redraw_board,
+        redraw_side_board::<Next>,
+    )
+        .chain()
+        .in_set(Game),
+);
 ```
 
 ### Replace `redraw_board`

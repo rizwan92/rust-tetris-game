@@ -2,6 +2,12 @@
 
 Use this file after collision is complete and your baseline input handling already respects `manual_drop_gravity`.
 
+## Commenting Rule For This File
+
+- comments explain both the toggle logic and the UI update logic
+- changed parameters are commented in the signature
+- short examples are included where the meaning could be confusing
+
 ## Enable the feature
 
 Set [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml) to:
@@ -16,6 +22,7 @@ enabled_features = ["config", "collision", "score", "rng", "hard_drop"]
 - switches `GameState.manual_drop_gravity` between soft and hard values
 - updates the on-screen hard-drop status text
 - registers the new systems inside `HardDropPlugin`
+- explains the changed parameters and body lines in plain English
 
 ## `src/hard_drop.rs`
 
@@ -46,8 +53,10 @@ use crate::{
 ```rust
 fn toggle_hard_drop(
     // Read keyboard transitions for this frame.
+    // We only want the exact press moment, not continuous holding.
     keyboard: Res<ButtonInput<KeyCode>>,
     // Access the single hard-drop toggle component mutably.
+    // This component stores one boolean like `true` or `false`.
     mut hard_drop: Single<&mut HardDrop>,
 ) {
     // Flip the hard-drop state when Z is pressed.
@@ -59,8 +68,10 @@ fn toggle_hard_drop(
 
 fn update_manual_drop_gravity(
     // Read the hard-drop toggle only when it has changed.
+    // `Changed<HardDrop>` avoids extra work every frame.
     hard_drop: Single<&HardDrop, Changed<HardDrop>>,
     // Update the game-state gravity used by manual down presses.
+    // This is the value that `ArrowDown` uses, not the automatic gravity timer.
     mut state: ResMut<GameState>,
 ) {
     // Use hard-drop gravity when the toggle is on, otherwise use soft-drop gravity.
@@ -73,6 +84,7 @@ fn update_manual_drop_gravity(
 
 fn update_status_text(
     // Read the hard-drop component and the text together only when the toggle changed.
+    // The first item is the boolean state, and the second item is the visible text.
     mut status: Single<(&HardDrop, &mut Text), Changed<HardDrop>>,
 ) {
     // Choose the user-visible label from the boolean toggle.
@@ -90,6 +102,7 @@ impl Plugin for HardDropPlugin {
         // Spawn the status text as part of the game startup sequence.
         app.add_systems(Startup, setup_status_text.in_set(Game))
             // Run the hard-drop systems during Update inside the Game system set.
+            // The validated version keeps the systems chained so the order is predictable.
             .add_systems(
                 Update,
                 (
@@ -97,6 +110,9 @@ impl Plugin for HardDropPlugin {
                     update_manual_drop_gravity,
                     update_status_text,
                 )
+                    // First flip the toggle, then update gravity, then refresh the text.
+                    // This prevents the text and the stored gravity from getting out of sync.
+                    .chain()
                     .in_set(Game),
             );
     }

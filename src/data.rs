@@ -12,8 +12,10 @@ use crate::bag::Bag;
 pub struct Cell(pub i32, pub i32);
 impl Cell {
     #[allow(unused)] // remove after you use this function
-    fn rotate_90_deg_cw(&self, _x: f32, _y: f32) -> Cell {
-        todo!("copy from earlier assignments")
+    fn rotate_90_deg_cw(&self, x: f32, y: f32) -> Cell {
+        let dx = self.0 as f32 - x;
+        let dy = self.1 as f32 - y;
+        Cell((x + dy).round() as i32, (y - dx).round() as i32)
     }
 
     /// Check whether this cell is in bounds.
@@ -43,6 +45,18 @@ pub struct Bounds {
 /// Whether this tetromino is the active one
 #[derive(Component, Copy, Clone)]
 pub struct Active;
+
+/// Whether this active tetromino was spawned this frame
+#[derive(Component, Copy, Clone)]
+pub struct JustSpawned;
+
+/// Whether the current active tetromino was fast-dropped by the player
+#[derive(Component, Copy, Clone)]
+pub struct HardDropped;
+
+/// Whether the current active tetromino was manually dropped onto the floor
+#[derive(Component, Copy, Clone)]
+pub struct ManualDropped;
 
 /// Whether this tetromino is the next one
 #[derive(Component, Copy, Clone)]
@@ -85,7 +99,7 @@ impl Tetromino {
 
     /// Is the tetromino in bounds?
     pub fn in_bounds(&self) -> bool {
-        todo!("copy from earlier")
+        self.cells.iter().all(Cell::in_bounds)
     }
 
     /// Is this the O tetromino?
@@ -108,12 +122,14 @@ impl Tetromino {
             return;
         }
 
-        todo!("rotate everything 90 degrees around the center.")
+        let (x, y) = self.center;
+        self.cells = self.cells.map(|cell| cell.rotate_90_deg_cw(x, y));
     }
 
     /// Shift all the cells in the tetromino by the given amount
-    pub fn shift(&mut self, _dx: i32, _dy: i32) {
-        todo!("copy from earlier")
+    pub fn shift(&mut self, dx: i32, dy: i32) {
+        self.cells = self.cells.map(|Cell(x, y)| Cell(x + dx, y + dy));
+        self.center = (self.center.0 + dx as f32, self.center.1 + dy as f32);
     }
 }
 
@@ -182,7 +198,8 @@ impl GameState {
 
     /// Auto-drop interval (i.e., gravity)
     pub fn drop_interval(&self) -> Duration {
-        todo!("this calculation can use floats directly unlike the one below")
+        let level = usize::min(self.level as usize, Self::MAX_LEVEL - 1);
+        Duration::from_secs_f32(Self::INTERVALS[level] / Self::FRAMERATE)
     }
 
     /// The drop interval in the beginning of the game.

@@ -2,6 +2,20 @@
 
 Use this file as the entry point for the assignment workflow.
 
+## Documentation Style
+
+Every implementation file in this folder should now be read with this rule:
+
+1. keep the inline comments when you copy the snippet
+2. read the parameter comments too, not only the body comments
+3. if a function signature was changed, the comments near that signature explain why each argument exists
+
+The goal is simple:
+
+- you should be able to read one line
+- then read the comment directly near that line
+- then understand what that line is doing in plain English
+
 ## Order
 
 Open and apply the cheat sheets in this exact order:
