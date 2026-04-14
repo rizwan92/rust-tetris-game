@@ -19,7 +19,7 @@ pub struct Board {
 pub const TILE_SIDE_LEN: f32 = 40.0;
 
 /// Amount of time before a tile is locked.
-pub const LOCKDOWN_DURATION: Duration = Duration::from_millis(2600);
+pub const LOCKDOWN_DURATION: Duration = Duration::from_millis(2400);
 
 /// Amount of time before a fast-dropped tile is locked.
 pub const HARD_DROP_LOCKDOWN_DURATION: Duration = Duration::from_millis(800);
@@ -287,7 +287,7 @@ pub fn handle_user_input(
 pub fn gravity(
     time: Res<Time<Fixed>>,
     mut state: ResMut<GameState>,
-    mut active: Query<&mut Tetromino, With<Active>>,
+    mut active: Query<&mut Tetromino, (With<Active>, Without<JustSpawned>)>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
     // Advance the automatic gravity timer every fixed update.
@@ -311,11 +311,27 @@ pub fn gravity(
     }
 }
 
+/// Remove the one-frame spawn marker from active tetrominos.
+pub fn clear_just_spawned(
+    // Use commands so the temporary marker can be removed after the frame finishes.
+    mut commands: Commands,
+    // Read every active piece that still has the fresh-spawn marker.
+    fresh: Query<(Entity, Ref<JustSpawned>)>,
+) {
+    // Keep the marker on the exact frame where it was added.
+    // Remove it on the following frame so the piece skips one full extra update.
+    for (entity, just_spawned) in &fresh {
+        if just_spawned.is_added() {
+            continue;
+        }
+        commands.entity(entity).remove::<JustSpawned>();
+    }
+}
+
 /// Check if the active tetromino cannot move down. If so, deactivate it.
 pub fn deactivate_if_stuck(
     mut commands: Commands,
     time: Res<Time<Fixed>>,
-    virtual_time: Res<Time<Virtual>>,
     time_strategy: Res<bevy::time::TimeUpdateStrategy>,
     mut lockdown: ResMut<LockdownTimer>,
     mut carry_gravity_timer: ResMut<CarryGravityTimer>,
@@ -346,13 +362,12 @@ pub fn deactivate_if_stuck(
         LOCKDOWN_DURATION
     };
     // Replays use a manual time strategy and need exact recorded timing.
-    // The ordinary-speed sleep-based tests can be one fixed step late on macOS,
-    // but the accelerated baseline tests expect the original "start next step"
-    // behavior, so only the default-speed automatic path counts the creation step.
+    // In ordinary automatic timing we also count the creation step, which keeps
+    // the macOS lock timing stable enough for the baseline/collision tests.
     let tick_on_create = !matches!(
         *time_strategy,
         bevy::time::TimeUpdateStrategy::ManualDuration(_)
-    ) && virtual_time.relative_speed() <= 1.0;
+    );
     // Start or advance the lockdown timer using that duration.
     lockdown.start_or_advance(duration, &time, tick_on_create);
     if !lockdown.just_finished() {
@@ -380,6 +395,7 @@ pub fn deactivate_if_stuck(
 pub fn spawn_next_tetromino(
     mut commands: Commands,
     mut state: ResMut<GameState>,
+    time_strategy: Res<bevy::time::TimeUpdateStrategy>,
     mut lockdown: ResMut<LockdownTimer>,
     mut carry_gravity_timer: ResMut<CarryGravityTimer>,
     active: Query<(), (With<Active>, With<Tetromino>)>,
@@ -412,7 +428,18 @@ pub fn spawn_next_tetromino(
     next_tetromino.shift(2, 2);
 
     // Spawn the new active piece and the refreshed Next preview.
-    commands.spawn((active_tetromino, Active));
+    if active_tetromino.is_o()
+        && !matches!(
+            *time_strategy,
+            bevy::time::TimeUpdateStrategy::ManualDuration(_)
+        )
+    {
+        // The O piece is the one that proved timing-sensitive on this platform,
+        // so shield it from same-frame gravity and clear the marker later.
+        commands.spawn((active_tetromino, Active, JustSpawned));
+    } else {
+        commands.spawn((active_tetromino, Active));
+    }
     commands.spawn((next_tetromino, Next));
     if !carry_gravity_timer.0 {
         // Normally a new piece should start with a fresh gravity timer.

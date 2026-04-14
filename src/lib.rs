@@ -75,6 +75,7 @@ pub fn build_app(app: &mut App, cfg: config::GameConfig) {
             PostUpdate,
             (
                 handle_user_input,
+                clear_just_spawned,
                 redraw_board,
                 redraw_side_board::<Next>,
             )

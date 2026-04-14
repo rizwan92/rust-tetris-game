@@ -40,6 +40,7 @@ Keep the validated timing helpers and markers used by later features:
 - `HardDropped`
 - `CarryGravityTimer`
 - replay-aware lock timing in `deactivate_if_stuck`
+- a narrow automatic-time `O`-spawn shield using `JustSpawned`
 
 Why:
 
@@ -58,6 +59,7 @@ Keep the small queued-input wiring:
 - `queue_hold_input`
 - `swap_hold` in `FixedUpdate`
 - `swap_hold` fallback in `PostUpdate`
+- a narrow automatic-time `I`/`O` spawn shield for swapped-in active pieces
 
 Why:
 

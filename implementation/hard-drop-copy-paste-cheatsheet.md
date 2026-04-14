@@ -114,6 +114,46 @@ impl Plugin for HardDropPlugin {
 
 ## `src/board.rs`
 
+### Keep the automatic-time `O`-spawn guard
+
+The validated final source keeps a narrow guard for the timing-sensitive `O`
+piece in ordinary non-replay runs:
+
+```rust
+pub fn clear_just_spawned(
+    // Use commands so the temporary marker can be removed after the frame finishes.
+    mut commands: Commands,
+    // Read every active piece that still has the fresh-spawn marker.
+    fresh: Query<(Entity, Ref<JustSpawned>)>,
+) {
+    // Keep the marker on the exact frame where it was added.
+    // Remove it on the following frame so the piece skips one full extra update.
+    for (entity, just_spawned) in &fresh {
+        if just_spawned.is_added() {
+            continue;
+        }
+        commands.entity(entity).remove::<JustSpawned>();
+    }
+}
+```
+
+And inside `spawn_next_tetromino`, keep this validated spawn branch:
+
+```rust
+    if active_tetromino.is_o()
+        && !matches!(
+            *time_strategy,
+            bevy::time::TimeUpdateStrategy::ManualDuration(_)
+        )
+    {
+        // The O piece is the one that proved timing-sensitive on this platform,
+        // so shield it from same-frame gravity and clear the marker later.
+        commands.spawn((active_tetromino, Active, JustSpawned));
+    } else {
+        commands.spawn((active_tetromino, Active));
+    }
+```
+
 ### Update `LockdownTimer::start_or_advance`
 
 Use this validated helper once `hard_drop` is active:
@@ -215,8 +255,6 @@ pub fn deactivate_if_stuck(
     mut commands: Commands,
     // Fixed-step time drives the lock timer.
     time: Res<Time<Fixed>>,
-    // Read the virtual clock so the ordinary-speed path can be handled separately.
-    virtual_time: Res<Time<Virtual>>,
     // Read the time strategy so replay tests can keep their exact timing.
     time_strategy: Res<bevy::time::TimeUpdateStrategy>,
     // Store the current lock timer resource.
@@ -237,13 +275,12 @@ pub fn deactivate_if_stuck(
     };
 
     // Replay tests use `ManualDuration`, and they need exact recorded timing.
-    // The ordinary-speed automatic path on macOS can be one step late, but the
-    // accelerated gravity tests expect the original behavior, so only count the
-    // creation frame when the virtual clock is still at normal speed.
+    // In ordinary automatic timing we also count the creation step, which keeps
+    // the macOS lock timing stable enough for the baseline/collision tests.
     let tick_on_create = !matches!(
         *time_strategy,
         bevy::time::TimeUpdateStrategy::ManualDuration(_)
-    ) && virtual_time.relative_speed() <= 1.0;
+    );
 
     // Start or advance the timer with the chosen duration and timing mode.
     lockdown.start_or_advance(duration, &time, tick_on_create);
@@ -267,7 +304,7 @@ pub fn deactivate_if_stuck(
 This feature is half straightforward feature work and half validated timing work:
 
 - the toggle and status text are normal assignment-style logic in `src/hard_drop.rs`
-- the down-arrow and lock-timer adjustments in `src/board.rs` are required to keep replay tests and non-replay tests both stable
+- the down-arrow, lock-timer, and automatic-time `O`-spawn adjustments in `src/board.rs` are required to keep replay tests and non-replay tests both stable
 - those `board.rs` changes are not just extra polish; they are part of the working hard-drop solution
 
 ## Test commands

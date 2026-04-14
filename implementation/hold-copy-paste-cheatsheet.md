@@ -106,6 +106,8 @@ File:
 pub fn swap_hold(
     // Read and clear the pending hold request.
     mut pending_hold: ResMut<PendingHold>,
+    // Read the time strategy so replay timing can stay untouched.
+    time_strategy: Res<bevy::time::TimeUpdateStrategy>,
     // Use commands to despawn and respawn the logical tetromino entities.
     mut commands: Commands,
     // Access the bag because first hold consumes the current next piece.
@@ -177,6 +179,19 @@ pub fn swap_hold(
         tetromino
     };
 
+    let should_delay_spawn_gravity = |tetromino: &Tetromino| {
+        // Detect the I piece by checking whether all cells share one x or one y coordinate.
+        let is_i = tetromino.cells.iter().all(|cell| cell.0 == tetromino.cells[0].0)
+            || tetromino.cells.iter().all(|cell| cell.1 == tetromino.cells[0].1);
+        // Only the timing-sensitive I/O cases need the extra protection,
+        // and replay timing must stay untouched.
+        (tetromino.is_o() || is_i)
+            && !matches!(
+                *time_strategy,
+                bevy::time::TimeUpdateStrategy::ManualDuration(_)
+            )
+    };
+
     let try_resolve = |mut tetromino: Tetromino, obstacles: &mut Query<&Block, With<Obstacle>>| {
         // Try the original placement plus up to four upward kicks.
         for _ in 0..=4 {
@@ -246,7 +261,11 @@ pub fn swap_hold(
         commands.entity(active_entity).despawn();
         commands.entity(held_entity).despawn();
         commands.spawn((to_hold(active_piece), Hold));
-        commands.spawn((candidate, Active));
+        if should_delay_spawn_gravity(&candidate) {
+            commands.spawn((candidate, Active, JustSpawned));
+        } else {
+            commands.spawn((candidate, Active));
+        }
         return;
     }
 
@@ -300,7 +319,11 @@ pub fn swap_hold(
     // Move the active piece into hold and make the candidate active.
     commands.entity(active_entity).despawn();
     commands.spawn((to_hold(active_piece), Hold));
-    commands.spawn((candidate, Active));
+    if should_delay_spawn_gravity(&candidate) {
+        commands.spawn((candidate, Active, JustSpawned));
+    } else {
+        commands.spawn((candidate, Active));
+    }
 
     // Refresh the logical Next piece because the bag front changed.
     for (entity, _) in &next_tetrominoes {
@@ -328,7 +351,8 @@ This feature is mostly direct `hold.rs` assignment logic:
 
 - swap rules, hold-window centering, and upward collision resolution all belong here
 - the only small extra piece is the queued `X` input handling required by Bevy scheduling
-- that queue/fallback logic is a validated runtime fix, not extra architecture
+- the automatic-time `I`/`O` spawn shield is also part of the validated runtime fix
+- those runtime fixes are not extra architecture; they are what kept the hold timing stable on this machine
 
 ## Test commands
 
