@@ -1,96 +1,218 @@
-# Implementation Roadmap
+# Final Implementation Guide
 
-Use this file as the entry point for the assignment workflow.
+This folder is the final study set for the project.
 
-Helpful companion note:
+The goal of these files is simple:
 
-- [design-checkpoint-note.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/design-checkpoint-note.md)
-- [minimum-required-non-todo-changes.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/minimum-required-non-todo-changes.md)
-- [one-page-submission-note.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/one-page-submission-note.md)
-- [viva-short-note.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/viva-short-note.md)
+1. help you understand what game you are building
+2. help you understand how the codebase is organized
+3. help you rebuild the final working solution from the starter code
+4. help you prepare one clean pull request per feature
 
-## Documentation Style
+If you follow the guides in order, you do not need to guess where the code
+should go. Each guide tells you what file to open, what function or block to
+find, what snippet to paste, and what tests to run before moving forward.
 
-Every implementation file in this folder should now be read with this rule:
+## How to use this folder
 
-1. keep the inline comments when you copy the snippet
-2. read the parameter comments too, not only the body comments
-3. if a function signature was changed, the comments near that signature explain why each argument exists
+Use this folder like a lab manual.
 
-The goal is simple:
+1. start from the starter code inside `original-repo/`
+2. open the matching final file in `src/`
+3. read the guide for the current feature
+4. copy the guided snippet into the right place
+5. run the tests written in that guide
+6. only then move to the next feature
 
-- you should be able to read one line
-- then read the comment directly near that line
-- then understand what that line is doing in plain English
+The most important rule is: do not jump ahead.
 
-One more sync rule matters:
+This project becomes much easier when you build it in the same order that the
+features depend on each other.
 
-1. the code snippet in each cheat sheet should match the real Rust source for that feature
-2. the inline comments in the cheat sheet should also exist in the actual source files
-3. if you later revert `src/` and paste from the cheat sheet, you should get the same working code and the same study comments
+## What game you are building
 
-## Order
+This is a Tetris-like game built with Bevy.
 
-Open and apply the cheat sheets in this exact order:
+At a high level, the game contains:
 
-1. [baseline-copy-paste-cheatsheet.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/baseline-copy-paste-cheatsheet.md)
-2. [config-copy-paste-cheatsheet.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/config-copy-paste-cheatsheet.md)
-3. [collision-copy-paste-cheatsheet.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/collision-copy-paste-cheatsheet.md)
-4. [score-copy-paste-cheatsheet.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/score-copy-paste-cheatsheet.md)
-5. [rng-copy-paste-cheatsheet.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/rng-copy-paste-cheatsheet.md)
-6. [hard-drop-copy-paste-cheatsheet.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/hard-drop-copy-paste-cheatsheet.md)
-7. [hold-copy-paste-cheatsheet.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/hold-copy-paste-cheatsheet.md)
+- one active tetromino that the player controls
+- obstacle blocks that stay on the board after a piece locks
+- a next-piece preview window
+- later, a hold window
+- gravity that moves the active piece down over time
+- score and level progression
+- a random bag that decides which piece appears next
 
-## How to use each file
+So even though the project has several Rust files, the game itself is built
+from a few repeated ideas:
 
-For every feature:
+- create a piece
+- move it
+- rotate it
+- stop it when it collides
+- lock it into the board
+- spawn the next piece
 
-1. Set `enabled_features` exactly as shown in that cheat sheet.
-2. Paste only the snippets from that feature doc.
-3. Run the smallest tests listed in that doc first.
-4. Run the feature-level test command next.
-5. Run the cumulative regression command last.
-6. Move to the next cheat sheet only when the acceptance checkpoint is satisfied.
+## The codebase in simple English
 
-## Feature dependency map
+The project may look large at first, but the core model is actually small.
 
-- `baseline` is the foundation for everything.
-- `config` should be done before every later required feature.
-- `collision` should be done before `score`, `hard_drop`, and `hold`.
-- `score` depends on `collision`.
-- `rng` depends on `config`.
-- `hard_drop` depends on `collision`.
-- `hold` depends on `collision`.
+- `Cell` means one board coordinate
+- `Tetromino` means one tetris piece made of 4 cells
+- `GameState` stores global game information like gravity, score, level, and bag
+- `Active` marks the piece the player is controlling right now
+- `Obstacle` marks cells that are already locked into the board
+- `Next` marks the preview piece
+- `Hold` marks the held piece
 
-## Practical rule
+So when you read the code, try not to think of it as "many random systems".
+Think of it as one game loop with a few simple steps.
 
-If a later feature test fails in a strange way, first rerun:
+## The most important concept in this project
 
-1. the smallest test from the current feature
-2. the previous feature’s regression command
+The hardest part of the project is not the rotation formula.
+The hardest part is the lifecycle of the active piece.
 
-That usually tells you whether the bug is new or whether an earlier feature was broken by a later paste.
+Every feature depends on this lifecycle:
 
-## TODO-First Rule
+1. a piece spawns
+2. the player can move or rotate it
+3. gravity pulls it downward
+4. if it cannot move down anymore, lock timing starts
+5. once it locks, it becomes obstacle blocks
+6. then the next piece becomes active
 
-The assignment should still be approached as "fill the TODOs first".
+Later features like collision, score, hard drop, and hold all build on top of
+this same flow.
 
-After re-checking the starter repo and the tests, the honest summary is:
+That is why the baseline guide matters so much.
+If the baseline piece lifecycle is not stable, later features will feel much
+more confusing than they really are.
 
-- `data.rs`, `config.rs`, `collision.rs`, `score.rs`, `bag.rs`, and most of `hard_drop.rs` are straightforward TODO-style fills
-- `board.rs` is mostly TODO-fill work too, but later features add a few small timing markers there
-- `hold.rs` needs one small Bevy input-queue helper even though the starter file only exposes `swap_hold`
-- `lib.rs` needs the validated schedule ordering from the working source, because the starter-style `Update` ordering reintroduced flaky timing on macOS
+## Why these guides use both `original-repo/` and the final `src/`
 
-So the right mental model is:
+These guides were written by comparing:
 
-1. fill the intended TODO logic first
-2. keep extra wiring only where the tests prove it is required
-3. avoid inventing new systems or new architecture unless a validated test forces it
+- the starter university code inside `original-repo/`
+- the final passing implementation in the main `src/` folder
 
-## Recommended stopping points
+This is helpful for two reasons.
 
-- Stop after `baseline` and make sure the game loop feels correct.
-- Stop after `collision` because many core gameplay behaviors become real there.
-- Stop after `score` because that stabilizes level and gravity behavior.
-- Stop after `hold` because that completes the required feature set.
+First, you can see what the university originally gave you.
+That tells you which TODOs or missing logic were expected from students.
+
+Second, you can also see the final target that actually passes the tests.
+That saves you from guessing where a fix should go or how the finished shape
+should look.
+
+In short:
+
+- `original-repo/` shows the starting point
+- `src/` shows the final target
+- `implementation/` explains the journey from one to the other
+
+## Why some guides add small helpers
+
+Most of the work in this assignment is normal TODO-filling.
+
+But in a few places, especially around Bevy timing and active-piece lifecycle,
+the fully working solution needs a small helper or a small runtime fix in
+addition to the obvious TODO logic.
+
+That is not extra overengineering.
+It is simply the practical code shape that made the test suite stable.
+
+So if a guide asks you to add:
+
+- a helper component
+- a small helper function
+- a scheduling line
+- a shared state value
+
+it is because that piece supports the final working behavior, not because the
+feature became conceptually huge.
+
+## Recommended PR order
+
+Please build the project in this order.
+
+1. [01-baseline-pr-guide.md](./01-baseline-pr-guide.md)
+2. [02-config-pr-guide.md](./02-config-pr-guide.md)
+3. [03-collision-pr-guide.md](./03-collision-pr-guide.md)
+4. [04-score-pr-guide.md](./04-score-pr-guide.md)
+5. [05-rng-pr-guide.md](./05-rng-pr-guide.md)
+6. [06-hard-drop-pr-guide.md](./06-hard-drop-pr-guide.md)
+7. [07-hold-pr-guide.md](./07-hold-pr-guide.md)
+
+This order matters.
+
+For example:
+
+- `score` depends on line clear information from `collision`
+- `hard_drop` depends on baseline movement and collision behavior
+- `hold` depends on stable spawning and active-piece handling
+
+So if you try to do later guides first, the code will seem harder than it is.
+
+## What to do before each PR
+
+Before you start a feature, open both versions of the file you are about to edit.
+
+- open `original-repo/src/...`
+- open `src/...`
+
+Then ask these three questions:
+
+1. what did the starter code already provide?
+2. what logic is still missing?
+3. what does the final working version look like?
+
+This makes the guide much easier to follow because you are not copying blindly.
+You are comparing:
+
+- starter shape
+- final shape
+- guided explanation
+
+## How each guide is written
+
+Each feature guide is designed to be practical.
+
+Inside each guide you will usually see:
+
+- the goal of the feature in simple English
+- the file or function you need to find
+- the exact snippet you need to paste
+- an explanation of what that code is doing
+- the tests you should run before the next PR
+
+So the guides are not just notes.
+They are meant to be used as step-by-step implementation instructions.
+
+## Suggested PR naming
+
+If you want a simple clean sequence, use this naming:
+
+- PR 1: `baseline`
+- PR 2: `config`
+- PR 3: `collision`
+- PR 4: `score`
+- PR 5: `rng`
+- PR 6: `hard_drop`
+- PR 7: `hold`
+
+## Final expectation
+
+Take the project one layer at a time.
+
+Do not worry if a later feature looks difficult when viewed alone.
+Most of the confusion disappears when the earlier pieces are already working.
+
+So the best path is:
+
+1. finish baseline
+2. verify tests
+3. raise the PR
+4. move to the next guide
+
+That is the simplest and safest way to reach the final working solution.
