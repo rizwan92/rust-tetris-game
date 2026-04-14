@@ -8,6 +8,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  WGPU_BACKEND: vulkan
+  VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
 
 jobs:
   build:
@@ -32,7 +34,8 @@ jobs:
             libxinerama-dev \
             libgl1-mesa-dev \
             libglu1-mesa-dev \
-            libvulkan-dev
+            libvulkan-dev \
+            mesa-vulkan-drivers
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
