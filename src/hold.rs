@@ -38,7 +38,7 @@ fn queue_hold_input(
 pub fn swap_hold(
     // Read and clear the pending hold request.
     mut pending_hold: ResMut<PendingHold>,
-    // Read the time strategy so replay timing can stay untouched.
+    // Read the time strategy so the shared activation helper can choose replay vs runtime timing.
     time_strategy: Res<bevy::time::TimeUpdateStrategy>,
     // Use commands to despawn and respawn the logical tetromino entities.
     mut commands: Commands,
@@ -66,11 +66,19 @@ pub fn swap_hold(
         return;
     };
     let active_piece = *active_piece;
+    // Normalize Bevy's time strategy once so both hold paths use the same activation rules.
+    let timing_mode = crate::board::timing_mode(&time_strategy);
 
     let to_hold = |mut tetromino: Tetromino| {
         // Detect the I piece by checking whether all cells are on one row or column.
-        let is_i = tetromino.cells.iter().all(|cell| cell.0 == tetromino.cells[0].0)
-            || tetromino.cells.iter().all(|cell| cell.1 == tetromino.cells[0].1);
+        let is_i = tetromino
+            .cells
+            .iter()
+            .all(|cell| cell.0 == tetromino.cells[0].0)
+            || tetromino
+                .cells
+                .iter()
+                .all(|cell| cell.1 == tetromino.cells[0].1);
         // I and O pieces use the centered `(2.5, 2.5)` preview position.
         let target_center = if tetromino.is_o() || is_i {
             (2.5, 2.5)
@@ -109,19 +117,6 @@ pub fn swap_hold(
         // Translate the held piece into board coordinates.
         tetromino.shift(2, y_shift);
         tetromino
-    };
-
-    let should_delay_spawn_gravity = |tetromino: &Tetromino| {
-        // Detect the I piece by checking whether all cells share one x or one y coordinate.
-        let is_i = tetromino.cells.iter().all(|cell| cell.0 == tetromino.cells[0].0)
-            || tetromino.cells.iter().all(|cell| cell.1 == tetromino.cells[0].1);
-        // Only the timing-sensitive I/O cases need the extra protection,
-        // and replay timing must stay untouched.
-        (tetromino.is_o() || is_i)
-            && !matches!(
-                *time_strategy,
-                bevy::time::TimeUpdateStrategy::ManualDuration(_)
-            )
     };
 
     let try_resolve = |mut tetromino: Tetromino, obstacles: &mut Query<&Block, With<Obstacle>>| {
@@ -190,11 +185,17 @@ pub fn swap_hold(
         commands.entity(active_entity).despawn();
         commands.entity(held_entity).despawn();
         commands.spawn((to_hold(active_piece), Hold));
-        if should_delay_spawn_gravity(&candidate) {
-            commands.spawn((candidate, Active, JustSpawned));
-        } else {
-            commands.spawn((candidate, Active));
-        }
+        // Activate the swapped-in piece through the shared board helper so hold
+        // swaps and normal bag spawns use the same lifecycle entry rules.
+        activate_tetromino(
+            &mut commands,
+            &mut state,
+            candidate,
+            ActivationSource::HoldSwap,
+            timing_mode,
+            None,
+            &mut obstacles,
+        );
         return;
     }
 
@@ -248,11 +249,16 @@ pub fn swap_hold(
     // Move the active piece into hold and make the candidate active.
     commands.entity(active_entity).despawn();
     commands.spawn((to_hold(active_piece), Hold));
-    if should_delay_spawn_gravity(&candidate) {
-        commands.spawn((candidate, Active, JustSpawned));
-    } else {
-        commands.spawn((candidate, Active));
-    }
+    // Use the same activation helper here too so first-hold timing matches later swaps.
+    activate_tetromino(
+        &mut commands,
+        &mut state,
+        candidate,
+        ActivationSource::HoldSwap,
+        timing_mode,
+        None,
+        &mut obstacles,
+    );
 
     // Refresh the logical Next piece because the bag front changed.
     for (entity, _) in &next_tetrominoes {

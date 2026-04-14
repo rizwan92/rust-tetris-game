@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::ui::{BG_COLOR, PADDING};
 
 use super::data::*;
-use serde::{Serialize, Deserialize};
 use bevy::{platform::collections::HashMap, prelude::*};
+use serde::{Deserialize, Serialize};
 
 /// The main board containing visible tiles.
 #[derive(Resource)]
@@ -47,6 +47,144 @@ pub struct LockdownTimer(Option<Timer>);
 /// Whether the next spawned piece should inherit the current gravity timer.
 #[derive(Resource, Default)]
 pub struct CarryGravityTimer(pub bool);
+
+/// Whether gameplay timing is driven by deterministic replay time or normal runtime time.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub(crate) enum TimingMode {
+    /// Use the exact manual-timing behavior required by recorded replays.
+    Replay,
+    /// Use the ordinary runtime behavior used by live play and timing-sensitive tests.
+    Realtime,
+}
+
+/// Why a tetromino is becoming the active piece.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub(crate) enum ActivationSource {
+    /// The piece came from the bag as part of the normal spawn pipeline.
+    BagSpawn,
+    /// The piece came from the hold window and should follow the same activation rules.
+    HoldSwap,
+}
+
+/// Which lock-delay policy should be used once the active piece is grounded.
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
+pub(crate) enum LockKind {
+    /// Use the normal lock duration for pieces that landed without manual drop input.
+    Normal,
+    /// Use the shorter manual-drop lock duration for soft-drop and hard-drop landings.
+    ManualDrop,
+}
+
+/// Convert Bevy's time strategy into the smaller lifecycle timing modes the board uses.
+pub(crate) fn timing_mode(time_strategy: &bevy::time::TimeUpdateStrategy) -> TimingMode {
+    if matches!(
+        *time_strategy,
+        bevy::time::TimeUpdateStrategy::ManualDuration(_)
+    ) {
+        TimingMode::Replay
+    } else {
+        TimingMode::Realtime
+    }
+}
+
+// Detect the I tetromino by checking whether all four cells share one row or one column.
+fn is_i_piece(tetromino: &Tetromino) -> bool {
+    tetromino
+        .cells
+        .iter()
+        .all(|cell| cell.0 == tetromino.cells[0].0)
+        || tetromino
+            .cells
+            .iter()
+            .all(|cell| cell.1 == tetromino.cells[0].1)
+}
+
+// Decide whether a newly active piece should skip ordinary gravity for one activation window.
+fn should_delay_activation_gravity(
+    tetromino: &Tetromino,
+    source: ActivationSource,
+    timing_mode: TimingMode,
+) -> bool {
+    // Replays are already deterministic, so they should keep the original spawn timing.
+    if timing_mode == TimingMode::Replay {
+        return false;
+    }
+
+    match source {
+        // Ordinary bag spawns only need the narrow O-piece shield that stabilized the baseline tests.
+        ActivationSource::BagSpawn => tetromino.is_o(),
+        // Hold swaps need the same O-piece protection plus the I-piece timing protection.
+        ActivationSource::HoldSwap => tetromino.is_o() || is_i_piece(tetromino),
+    }
+}
+
+// Translate the current drop markers into the lock policy used by grounded pieces.
+fn lock_kind(has_hard_drop: bool, has_manual_drop: bool) -> LockKind {
+    if has_hard_drop || has_manual_drop {
+        LockKind::ManualDrop
+    } else {
+        LockKind::Normal
+    }
+}
+
+// Convert the chosen lock policy into the actual duration used by the lockdown timer.
+fn lock_duration(lock_kind: LockKind) -> Duration {
+    match lock_kind {
+        LockKind::Normal => LOCKDOWN_DURATION,
+        LockKind::ManualDrop => HARD_DROP_LOCKDOWN_DURATION,
+    }
+}
+
+// Decide whether the lockdown timer should count the frame where it was created.
+fn lockdown_ticks_on_create(timing_mode: TimingMode) -> bool {
+    timing_mode == TimingMode::Realtime
+}
+
+/// Activate a tetromino using the shared lifecycle rules for bag spawns and hold swaps.
+pub(crate) fn activate_tetromino(
+    commands: &mut Commands,
+    state: &mut GameState,
+    tetromino: Tetromino,
+    source: ActivationSource,
+    timing_mode: TimingMode,
+    carry_gravity_timer: Option<&mut CarryGravityTimer>,
+    obstacles: &mut Query<&Block, With<Obstacle>>,
+) -> bool {
+    // Both bag spawns and hold swaps must reject illegal activation positions.
+    if crate::there_is_collision(&tetromino, obstacles.reborrow()) {
+        if source == ActivationSource::BagSpawn {
+            // Normal spawns end the game when the spawn position is blocked.
+            commands.trigger(GameOver);
+        }
+        // Hold swaps treat an illegal replacement as an aborted swap instead.
+        return false;
+    }
+
+    // Spawn the new active piece and mark it as freshly activated when timing protection is needed.
+    if should_delay_activation_gravity(&tetromino, source, timing_mode) {
+        commands.spawn((tetromino, Active, JustSpawned));
+    } else {
+        commands.spawn((tetromino, Active));
+    }
+
+    // Bag spawns either reset gravity or preserve it according to the carry flag.
+    // Hold swaps intentionally preserve the current gravity timer so they stay in the
+    // same fixed-step cadence as the pre-existing validated behavior.
+    let keep_gravity_timer = match source {
+        ActivationSource::BagSpawn => carry_gravity_timer
+            .as_deref()
+            .is_some_and(|carry_gravity_timer| carry_gravity_timer.0),
+        ActivationSource::HoldSwap => true,
+    };
+    if !keep_gravity_timer {
+        state.gravity_timer.reset();
+    }
+    if let Some(carry_gravity_timer) = carry_gravity_timer {
+        carry_gravity_timer.0 = false;
+    }
+
+    true
+}
 
 #[allow(dead_code)] // remove after your implementation
 impl LockdownTimer {
@@ -356,18 +494,11 @@ pub fn deactivate_if_stuck(
     }
 
     // Manually dropped pieces lock faster than normally landed pieces.
-    let duration = if manual_dropped {
-        HARD_DROP_LOCKDOWN_DURATION
-    } else {
-        LOCKDOWN_DURATION
-    };
-    // Replays use a manual time strategy and need exact recorded timing.
-    // In ordinary automatic timing we also count the creation step, which keeps
-    // the macOS lock timing stable enough for the baseline/collision tests.
-    let tick_on_create = !matches!(
-        *time_strategy,
-        bevy::time::TimeUpdateStrategy::ManualDuration(_)
-    );
+    let timing_mode = timing_mode(&time_strategy);
+    let duration = lock_duration(lock_kind(_hard_dropped, manual_dropped));
+    // Replays keep exact recorded timing, while ordinary runs count the creation
+    // step too so the macOS lock timing stays stable for the baseline tests.
+    let tick_on_create = lockdown_ticks_on_create(timing_mode);
     // Start or advance the lockdown timer using that duration.
     lockdown.start_or_advance(duration, &time, tick_on_create);
     if !lockdown.just_finished() {
@@ -417,36 +548,26 @@ pub fn spawn_next_tetromino(
     // Shift it into the board spawn position.
     active_tetromino.shift(4, BOARD_HEIGHT as i32 - 1 - active_tetromino.bounds().top);
 
-    // If the spawn position is already blocked, the game is over.
-    if crate::there_is_collision(&active_tetromino, obstacles.reborrow()) {
-        commands.trigger(GameOver);
-        return;
-    }
-
     // Build the new logical preview from the front of the bag.
     let mut next_tetromino = state.bag.peek();
     next_tetromino.shift(2, 2);
 
-    // Spawn the new active piece and the refreshed Next preview.
-    if active_tetromino.is_o()
-        && !matches!(
-            *time_strategy,
-            bevy::time::TimeUpdateStrategy::ManualDuration(_)
-        )
-    {
-        // The O piece is the one that proved timing-sensitive on this platform,
-        // so shield it from same-frame gravity and clear the marker later.
-        commands.spawn((active_tetromino, Active, JustSpawned));
-    } else {
-        commands.spawn((active_tetromino, Active));
+    // Activate the new bag piece through the shared lifecycle helper so bag spawns
+    // and hold swaps follow the same activation contract.
+    if !activate_tetromino(
+        &mut commands,
+        &mut state,
+        active_tetromino,
+        ActivationSource::BagSpawn,
+        timing_mode(&time_strategy),
+        Some(&mut carry_gravity_timer),
+        &mut obstacles,
+    ) {
+        return;
     }
+
+    // Spawn the refreshed Next preview after the active piece has been accepted.
     commands.spawn((next_tetromino, Next));
-    if !carry_gravity_timer.0 {
-        // Normally a new piece should start with a fresh gravity timer.
-        state.gravity_timer.reset();
-    }
-    // Clear the carry flag once the next piece has been spawned.
-    carry_gravity_timer.0 = false;
     lockdown.reset();
 }
 
