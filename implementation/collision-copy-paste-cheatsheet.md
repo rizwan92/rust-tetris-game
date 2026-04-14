@@ -23,7 +23,7 @@ enabled_features = ["config", "collision"]
 - turns full obstacle rows into cleared lines
 - applies naive gravity after line clears
 - sets up a future hook for score updates with `LinesCleared`
-- explains each changed line in simple English near the snippet
+- keeps the implementation close to the intended `collision.rs` function bodies
 
 ## `src/collision.rs`
 
@@ -125,6 +125,14 @@ pub fn delete_full_lines(
 - `score` will consume the `LinesCleared` event emitted here.
 - Because your baseline systems already call `there_is_collision`, they will automatically pick up obstacle-aware collision after this feature is enabled.
 - `spawn_next_tetromino` should now trigger game over when a new piece collides with stacked obstacles at spawn.
+
+## Minimal-change note
+
+This feature is still normal assignment work:
+
+- almost everything stays inside `src/collision.rs`
+- `mock_collision.rs` should remain untouched
+- the only forward-looking addition is the gated `LinesCleared` event hook for `score`
 
 ## Test commands
 

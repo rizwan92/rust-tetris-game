@@ -16,6 +16,8 @@ The baseline file is the foundation, so the comments here are intentionally very
 
 This baseline file is synced to the validated **baseline solution path**.
 
+It is **not** meant to match the final all-features `src/` tree line-for-line.
+
 That means:
 
 1. the `src/data.rs` snippets are still very close to the current final source
@@ -121,17 +123,26 @@ pub struct JustSpawned;
 
 ## `src/board.rs`
 
-## Validation correction
+## Validation corrections
 
-When I tested the pasted baseline against the real app, one extra correction was needed:
+When I tested the pasted baseline against the real app, two extra corrections were needed:
 
 - newly spawned active pieces should ignore movement input for one update
+- baseline gameplay input and redraw ordering should stay in `PostUpdate`
 
 That means the validated baseline uses:
 
 - `Query<&mut Tetromino, (With<Active>, Without<JustSpawned>)>` in `handle_user_input`
 - a small `clear_just_spawned` system
 - `(active_tetromino, Active, JustSpawned)` in `spawn_next_tetromino`
+- `PostUpdate` wiring for input and redraw systems inside `build_app`
+
+One more validated note:
+
+- the working source keeps baseline gameplay input and redraw systems in `PostUpdate`
+- moving them back to the starter-style plain `Update` schedule brought back flaky baseline timing on macOS
+
+So for this assignment, that schedule change should be treated as a required baseline fix, not as extra architecture.
 
 ## Later-feature note
 
@@ -444,14 +455,14 @@ pub fn spawn_next_tetromino(
 
 ## `src/lib.rs`
 
-### Update the `Update` systems inside `build_app`
+### Update the `PostUpdate` systems inside `build_app`
 
 This is the baseline-only wiring.
 Later features can move or replace some systems in the final source tree.
 
 ```rust
 .add_systems(
-    Update,
+    PostUpdate,
     (
         handle_user_input,
         clear_just_spawned,

@@ -22,7 +22,8 @@ enabled_features = ["config", "collision", "score", "rng", "hard_drop"]
 - switches `GameState.manual_drop_gravity` between soft and hard values
 - updates the on-screen hard-drop status text
 - registers the new systems inside `HardDropPlugin`
-- explains the changed parameters and body lines in plain English
+- keeps the visible hard-drop feature logic in `src/hard_drop.rs`
+- keeps the validated lock-timing changes in `src/board.rs`
 
 ## `src/hard_drop.rs`
 
@@ -260,6 +261,14 @@ pub fn deactivate_if_stuck(
 - In the validated gameplay path, `ManualDropped` should stay on the piece after any successful manual downward move.
 - `HardDropped` is narrower: only set it when the fast manual drop actually lands on the floor or on obstacles.
 - `hold` does not change the hard-drop toggle itself, so these systems can stay isolated in `hard_drop.rs`.
+
+## Minimal-change note
+
+This feature is half straightforward feature work and half validated timing work:
+
+- the toggle and status text are normal assignment-style logic in `src/hard_drop.rs`
+- the down-arrow and lock-timer adjustments in `src/board.rs` are required to keep replay tests and non-replay tests both stable
+- those `board.rs` changes are not just extra polish; they are part of the working hard-drop solution
 
 ## Test commands
 

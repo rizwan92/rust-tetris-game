@@ -23,7 +23,7 @@ enabled_features = ["config", "collision", "score"]
 - levels up according to the assignment threshold
 - updates the gravity timer when level changes
 - shows score, level, and total lines in the UI
-- keeps the comments very literal so you can study the math line by line
+- keeps the implementation close to the intended `score.rs` logic
 
 ## `src/score.rs`
 
@@ -106,6 +106,14 @@ fn update_score_text(
 
 - `collision` already emits `LinesCleared`, so no extra event wiring is needed if you used the future-proof collision snippet.
 - `hard_drop` and `hold` recorded tests can also check score-related state later, so keep this behavior stable.
+
+## Minimal-change note
+
+This feature is still mostly direct assignment work:
+
+- the scoring math belongs in `src/score.rs`
+- the gravity timer update belongs here too, when level changes
+- `collision` should only emit the `LinesCleared` event, not implement score logic itself
 
 ## Test commands
 

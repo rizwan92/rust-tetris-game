@@ -24,6 +24,19 @@ enabled_features = ["config", "collision", "score", "rng", "hard_drop", "hold"]
 - resolves spawn collisions by kicking upward up to 4 times
 - updates the logical `Next` tetromino when the bag is consumed during first hold
 
+## Important validation note
+
+The starter file makes `swap_hold` look like the only change, but the validated
+Bevy solution needs one tiny extra input-queue step too:
+
+- queue `X` in `Update`
+- consume that request in `FixedUpdate`
+- keep the `PostUpdate` fallback so a missed fixed tick does not drop the hold input
+
+When I removed that fallback during verification, `first_hold` failed immediately.
+So this is not extra design work, it is the minimum reliable Bevy wiring for the
+starter `swap_hold` feature.
+
 ## Coordinate rules you must keep
 
 Use these validated rules:
@@ -308,6 +321,14 @@ pub fn swap_hold(
 - The hold tests expect the hold preview to preserve the current orientation, but to be re-centered into the hold window.
 - The first-hold path should use the logical `Next` tetromino already on screen.
 - The swap logic is shape-sensitive, especially for `I` and `O`.
+
+## Minimal-change note
+
+This feature is mostly direct `hold.rs` assignment logic:
+
+- swap rules, hold-window centering, and upward collision resolution all belong here
+- the only small extra piece is the queued `X` input handling required by Bevy scheduling
+- that queue/fallback logic is a validated runtime fix, not extra architecture
 
 ## Test commands
 

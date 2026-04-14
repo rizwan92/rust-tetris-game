@@ -24,7 +24,7 @@ This order keeps your docs cumulative, even though `rng` technically depends onl
 - implements seeded and unseeded random bags
 - makes seeded test sequences deterministic
 - extends config tests to cover the new JSON bag shapes
-- explains why the order of `shuffle`, `last`, and `pop` must match
+- keeps the implementation close to the intended bag/config logic
 
 ## `src/bag.rs`
 
@@ -157,6 +157,14 @@ The provided RNG tests expect this exact behavior:
 - take pieces using `pop()` from the **back** of the vector
 
 If you use `remove(0)` or iterate from the front, the expected seed sequences will fail.
+
+## Minimal-change note
+
+This feature is still normal assignment work:
+
+- the main logic lives in `src/bag.rs`
+- the extra JSON coverage lives in `src/config.rs`
+- there is no special Bevy timing workaround here
 
 ## Test commands
 

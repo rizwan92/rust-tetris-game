@@ -22,7 +22,7 @@ enabled_features = ["config"]
 - makes `GameConfig` serializable/deserializable
 - implements `GameConfig::load`
 - adds the unit tests the assignment explicitly expects
-- explains the changed lines directly in the snippets so they are easier to paste and study
+- keeps this feature close to the assignment's intended small `config.rs` change set
 
 ## `src/config.rs`
 
@@ -108,6 +108,14 @@ fn load_rejects_invalid_json() {
   - `{"bag":"RandomSeed","animate_title":false}`
 - The provided config files under `test_data/` already use these serde shapes.
 - Once `rng` is enabled, the `src/config.rs` test module should match the extra snippet from the RNG cheat sheet exactly.
+
+## Minimal-change note
+
+This feature is one of the cleanest assignment steps:
+
+- the real work is almost entirely inside `src/config.rs`
+- there is no special Bevy timing workaround here
+- this should be treated as normal TODO-style assignment work plus unit tests
 
 ## Test commands
 

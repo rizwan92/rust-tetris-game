@@ -2,6 +2,12 @@
 
 Use this file as the entry point for the assignment workflow.
 
+Helpful companion note:
+
+- [minimum-required-non-todo-changes.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/minimum-required-non-todo-changes.md)
+- [one-page-submission-note.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/one-page-submission-note.md)
+- [viva-short-note.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/viva-short-note.md)
+
 ## Documentation Style
 
 Every implementation file in this folder should now be read with this rule:
@@ -63,6 +69,23 @@ If a later feature test fails in a strange way, first rerun:
 2. the previous feature’s regression command
 
 That usually tells you whether the bug is new or whether an earlier feature was broken by a later paste.
+
+## TODO-First Rule
+
+The assignment should still be approached as "fill the TODOs first".
+
+After re-checking the starter repo and the tests, the honest summary is:
+
+- `data.rs`, `config.rs`, `collision.rs`, `score.rs`, `bag.rs`, and most of `hard_drop.rs` are straightforward TODO-style fills
+- `board.rs` is mostly TODO-fill work too, but later features add a few small timing markers there
+- `hold.rs` needs one small Bevy input-queue helper even though the starter file only exposes `swap_hold`
+- `lib.rs` needs the validated schedule ordering from the working source, because the starter-style `Update` ordering reintroduced flaky timing on macOS
+
+So the right mental model is:
+
+1. fill the intended TODO logic first
+2. keep extra wiring only where the tests prove it is required
+3. avoid inventing new systems or new architecture unless a validated test forces it
 
 ## Recommended stopping points
 
