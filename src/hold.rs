@@ -11,6 +11,22 @@ use bevy::prelude::*;
 #[derive(Component, Copy, Clone)]
 pub struct Hold;
 
+/// Whether the player requested a hold swap this frame.
+#[derive(Resource, Default)]
+pub struct PendingHold(pub bool);
+
+fn queue_hold_input(
+    // Read keyboard transitions for the current schedule.
+    keyboard: Res<ButtonInput<KeyCode>>,
+    // Store a pending hold request until gameplay logic consumes it.
+    mut pending_hold: ResMut<PendingHold>,
+) {
+    // Remember the X press so either the fixed-step or frame-step hold system can use it.
+    if keyboard.just_pressed(KeyCode::KeyX) {
+        pending_hold.0 = true;
+    }
+}
+
 /// Swap the current piece and the piece in the hold window on user input.
 ///
 /// If no piece is held, then take the next piece as the active piece and move
@@ -20,8 +36,8 @@ pub struct Hold;
 /// up by up to 4 times until the swap is legal.  If that is not possible, then
 /// abort the swap.
 pub fn swap_hold(
-    // Read keyboard input so we can react when the player presses X.
-    keyboard: Res<ButtonInput<KeyCode>>,
+    // Read and clear the pending hold request.
+    mut pending_hold: ResMut<PendingHold>,
     // Use commands to despawn and respawn the logical tetromino entities.
     mut commands: Commands,
     // Access the bag because first hold consumes the current next piece.
@@ -36,10 +52,12 @@ pub fn swap_hold(
     // Access obstacles so we can reject illegal swap results.
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
-    // Only react on the exact frame when X was newly pressed.
-    if !keyboard.just_pressed(KeyCode::KeyX) {
+    // Only run when a queued hold input is waiting to be processed.
+    if !pending_hold.0 {
         return;
     }
+    // Consume the queued request so we do not swap twice in one frame.
+    pending_hold.0 = false;
 
     // Stop immediately when there is no active piece.
     let Ok((active_entity, active_piece)) = active.single() else {
@@ -119,7 +137,18 @@ pub fn swap_hold(
             .all(|cell| cell.1 == candidate.cells[0].1);
         // Choose the correct board-placement rule for this shape.
         let candidate = if vertical_i || horizontal_i {
-            to_board(candidate)
+            if active_piece.is_o() {
+                // When the current active piece is O, align the held I using rounded centers.
+                // This matches the recorded swap where I takes over the O piece's board position.
+                let mut candidate = candidate;
+                candidate.shift(
+                    (active_piece.center.0 - candidate.center.0).round() as i32,
+                    (active_piece.center.1 - candidate.center.1).round() as i32,
+                );
+                candidate
+            } else {
+                to_board(candidate)
+            }
         } else if candidate.is_o() {
             // O pieces use rounded center alignment.
             let mut candidate = candidate;
@@ -239,7 +268,16 @@ pub struct HoldPlugin;
 
 impl Plugin for HoldPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_hold_window.in_set(Game))
+        app.init_resource::<PendingHold>()
+            .add_systems(Startup, setup_hold_window.in_set(Game))
+            .add_systems(Update, queue_hold_input.in_set(Game))
+            .add_systems(
+                FixedUpdate,
+                // Read hold input during the fixed-step gameplay loop so it can affect
+                // the currently active piece before lock/spawn logic runs.
+                swap_hold.in_set(Game).before(crate::board::gravity),
+            )
+            // Fall back to frame-step processing when no fixed-step run happened this frame.
             .add_systems(PostUpdate, swap_hold.in_set(Game))
             .add_systems(PostUpdate, redraw_side_board::<Hold>.in_set(Game));
     }

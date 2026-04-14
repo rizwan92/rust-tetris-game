@@ -151,7 +151,8 @@ Later feature docs intentionally replace those parts.
 ### Replace `LockdownTimer::start_or_advance`
 
 This is the baseline-only signature.
-Later `hard_drop` work changes the real source to pass an explicit duration.
+Later `hard_drop` work changes the real source to pass an explicit duration and
+to branch slightly between replay timing and ordinary timing.
 
 File:
 - [board.rs](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/src/board.rs)

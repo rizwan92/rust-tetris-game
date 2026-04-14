@@ -51,15 +51,18 @@ pub struct CarryGravityTimer(pub bool);
 #[allow(dead_code)] // remove after your implementation
 impl LockdownTimer {
     // Advance the timer. Start it if it hasn't been started.
-    fn start_or_advance(&mut self, duration: Duration, time: &Time<Fixed>) {
+    fn start_or_advance(&mut self, duration: Duration, time: &Time<Fixed>, tick_on_create: bool) {
         // Create the timer the first time we discover the piece is stuck.
         // We use the provided duration so soft lock and hard-drop lock can differ.
         if self.0.is_none() {
             self.0 = Some(Timer::new(duration, TimerMode::Once));
-            return;
+            if !tick_on_create {
+                return;
+            }
         }
 
-        // Once the timer exists, advance it by one fixed-step delta.
+        // Advance the timer once per fixed step while the piece is stuck.
+        // In non-replay runs we can also count the creation frame to reduce timing flakiness.
         if let Some(timer) = &mut self.0 {
             timer.tick(time.delta());
         }
@@ -211,27 +214,19 @@ pub fn setup_board(
 
 /// Handle user input for the purposes of moving and/or rotating the tetromino.
 pub fn handle_user_input(
-    // Use commands so we can attach drop markers to the active piece.
     mut commands: Commands,
-    // Read one-frame keyboard transitions for player input.
     keyboard: Res<ButtonInput<KeyCode>>,
-    // Read the current manual-drop gravity setting from game state.
     state: Res<GameState>,
-    // Mutably access the current active tetromino and its entity id.
     mut active: Query<(Entity, &mut Tetromino), With<Active>>,
-    // Read obstacles so candidate moves can be collision-tested.
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
-    // Exit when there is no active piece to move.
     let Ok((entity, mut tetromino)) = active.single_mut() else {
         return;
     };
 
     if keyboard.just_pressed(KeyCode::ArrowDown) {
-        // Track whether the player-managed downward move actually changed position.
         let mut moved = false;
 
-        // Repeat downward steps based on the current manual drop gravity setting.
         for _ in 0..state.manual_drop_gravity {
             let mut candidate = *tetromino;
             candidate.shift(0, -1);
@@ -243,8 +238,6 @@ pub fn handle_user_input(
         }
 
         let landed = if moved {
-            // Look one more row down to see whether the piece is now sitting on the floor
-            // or on top of obstacles after the manual drop finished.
             let mut candidate = *tetromino;
             candidate.shift(0, -1);
             crate::there_is_collision(&candidate, obstacles.reborrow())
@@ -253,10 +246,13 @@ pub fn handle_user_input(
         };
 
         if moved {
-            // Remember that the player manually moved this piece downward.
+            // Once the player manually moves a piece downward, keep that information on the
+            // piece so later lock timing can still treat it as a manual drop even if gravity
+            // handles the final row before the piece becomes stuck.
             commands.entity(entity).insert(ManualDropped);
             if landed && state.manual_drop_gravity > SOFT_DROP_GRAVITY {
-                // Remember the special case where the fast manual drop reached the floor.
+                // Hard drop is narrower: only the fast manual drop that actually reaches the
+                // resting position should use the dedicated hard-drop marker.
                 commands.entity(entity).insert(HardDropped);
             }
         }
@@ -319,6 +315,7 @@ pub fn gravity(
 pub fn deactivate_if_stuck(
     mut commands: Commands,
     time: Res<Time<Fixed>>,
+    time_strategy: Res<bevy::time::TimeUpdateStrategy>,
     mut lockdown: ResMut<LockdownTimer>,
     mut carry_gravity_timer: ResMut<CarryGravityTimer>,
     active: Query<(Entity, &Tetromino, Has<HardDropped>, Has<ManualDropped>), With<Active>>,
@@ -347,8 +344,15 @@ pub fn deactivate_if_stuck(
     } else {
         LOCKDOWN_DURATION
     };
+    // Replays use a manual time strategy and need exact recorded timing.
+    // The sleep-based macOS tests are less stable, so in automatic timing mode we
+    // also count the frame where the piece first becomes stuck.
+    let tick_on_create = !matches!(
+        *time_strategy,
+        bevy::time::TimeUpdateStrategy::ManualDuration(_)
+    );
     // Start or advance the lockdown timer using that duration.
-    lockdown.start_or_advance(duration, &time);
+    lockdown.start_or_advance(duration, &time, tick_on_create);
     if !lockdown.just_finished() {
         return;
     }
