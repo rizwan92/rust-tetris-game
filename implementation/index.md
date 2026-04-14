@@ -4,6 +4,7 @@ Use this file as the entry point for the assignment workflow.
 
 Helpful companion note:
 
+- [design-checkpoint-note.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/design-checkpoint-note.md)
 - [minimum-required-non-todo-changes.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/minimum-required-non-todo-changes.md)
 - [one-page-submission-note.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/one-page-submission-note.md)
 - [viva-short-note.md](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/implementation/viva-short-note.md)
