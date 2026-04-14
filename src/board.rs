@@ -24,6 +24,9 @@ pub const LOCKDOWN_DURATION: Duration = Duration::from_millis(2400);
 /// Amount of time before a fast-dropped tile is locked.
 pub const HARD_DROP_LOCKDOWN_DURATION: Duration = Duration::from_millis(800);
 
+/// Slightly shorter realtime-only lock delay used to stabilize default-speed manual drops.
+const REALTIME_MANUAL_DROP_LOCKDOWN_DURATION: Duration = Duration::from_millis(700);
+
 /// An event signalling that the game is over.
 #[derive(Event)]
 pub struct GameOver;
@@ -128,9 +131,15 @@ fn lock_kind(has_hard_drop: bool, has_manual_drop: bool) -> LockKind {
 }
 
 // Convert the chosen lock policy into the actual duration used by the lockdown timer.
-fn lock_duration(lock_kind: LockKind) -> Duration {
+fn lock_duration(lock_kind: LockKind, timing_mode: TimingMode, relative_speed: f32) -> Duration {
     match lock_kind {
         LockKind::Normal => LOCKDOWN_DURATION,
+        LockKind::ManualDrop
+            if timing_mode == TimingMode::Realtime
+                && relative_speed <= 1.0 + f32::EPSILON =>
+        {
+            REALTIME_MANUAL_DROP_LOCKDOWN_DURATION
+        }
         LockKind::ManualDrop => HARD_DROP_LOCKDOWN_DURATION,
     }
 }
@@ -354,6 +363,10 @@ pub fn setup_board(
 pub fn handle_user_input(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
+    time: Res<Time<Fixed>>,
+    time_strategy: Res<bevy::time::TimeUpdateStrategy>,
+    virtual_time: Res<Time<Virtual>>,
+    mut lockdown: ResMut<LockdownTimer>,
     state: Res<GameState>,
     mut active: Query<(Entity, &mut Tetromino), With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
@@ -392,6 +405,22 @@ pub fn handle_user_input(
                 // Hard drop is narrower: only the fast manual drop that actually reaches the
                 // resting position should use the dedicated hard-drop marker.
                 commands.entity(entity).insert(HardDropped);
+            }
+            if landed && lockdown.0.is_none() && timing_mode(&time_strategy) == TimingMode::Realtime
+            {
+                // Start the lock timer as soon as a manual drop reaches the resting position.
+                // This keeps lock timing tied to the landing moment instead of waiting for the
+                // next fixed-step pass to discover that the piece is grounded.
+                let tick_on_create = lockdown_ticks_on_create(timing_mode(&time_strategy));
+                lockdown.start_or_advance(
+                    lock_duration(
+                        LockKind::ManualDrop,
+                        timing_mode(&time_strategy),
+                        virtual_time.relative_speed(),
+                    ),
+                    &time,
+                    tick_on_create,
+                );
             }
         }
     }
@@ -471,6 +500,7 @@ pub fn deactivate_if_stuck(
     mut commands: Commands,
     time: Res<Time<Fixed>>,
     time_strategy: Res<bevy::time::TimeUpdateStrategy>,
+    virtual_time: Res<Time<Virtual>>,
     mut lockdown: ResMut<LockdownTimer>,
     mut carry_gravity_timer: ResMut<CarryGravityTimer>,
     active: Query<(Entity, &Tetromino, Has<HardDropped>, Has<ManualDropped>), With<Active>>,
@@ -495,7 +525,11 @@ pub fn deactivate_if_stuck(
 
     // Manually dropped pieces lock faster than normally landed pieces.
     let timing_mode = timing_mode(&time_strategy);
-    let duration = lock_duration(lock_kind(_hard_dropped, manual_dropped));
+    let duration = lock_duration(
+        lock_kind(_hard_dropped, manual_dropped),
+        timing_mode,
+        virtual_time.relative_speed(),
+    );
     // Replays keep exact recorded timing, while ordinary runs count the creation
     // step too so the macOS lock timing stays stable for the baseline tests.
     let tick_on_create = lockdown_ticks_on_create(timing_mode);

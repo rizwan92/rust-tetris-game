@@ -29,6 +29,26 @@ The most important rule is: do not jump ahead.
 This project becomes much easier when you build it in the same order that the
 features depend on each other.
 
+## Test runner note
+
+The repository also contains a local nextest config file:
+
+- `.config/nextest.toml`
+
+That file makes plain `cargo nextest run` use a single test thread by default.
+
+Why this exists:
+
+- the Bevy end-to-end tests in this project are timing-sensitive on macOS
+- the gameplay itself is correct, but running several Bevy test binaries in
+  parallel can make timing drift and cause false failures
+
+So if you run:
+
+- `cargo nextest run`
+
+the repo will already use the stable serial nextest setup for you.
+
 ## What game you are building
 
 This is a Tetris-like game built with Bevy.

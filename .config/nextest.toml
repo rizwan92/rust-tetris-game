@@ -1,0 +1,5 @@
+[profile.default]
+# Bevy end-to-end tests in this repository are timing-sensitive on macOS.
+# Run nextest serially by default so `cargo nextest run` matches the stable
+# single-threaded test setup we use for local verification.
+test-threads = 1
