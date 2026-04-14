@@ -135,8 +135,7 @@ fn lock_duration(lock_kind: LockKind, timing_mode: TimingMode, relative_speed: f
     match lock_kind {
         LockKind::Normal => LOCKDOWN_DURATION,
         LockKind::ManualDrop
-            if timing_mode == TimingMode::Realtime
-                && relative_speed <= 1.0 + f32::EPSILON =>
+            if timing_mode == TimingMode::Realtime && relative_speed <= 1.0 + f32::EPSILON =>
         {
             REALTIME_MANUAL_DROP_LOCKDOWN_DURATION
         }
@@ -360,6 +359,7 @@ pub fn setup_board(
 }
 
 /// Handle user input for the purposes of moving and/or rotating the tetromino.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_user_input(
     mut commands: Commands,
     keyboard: Res<ButtonInput<KeyCode>>,
@@ -496,6 +496,7 @@ pub fn clear_just_spawned(
 }
 
 /// Check if the active tetromino cannot move down. If so, deactivate it.
+#[allow(clippy::too_many_arguments)]
 pub fn deactivate_if_stuck(
     mut commands: Commands,
     time: Res<Time<Fixed>>,
@@ -557,6 +558,7 @@ pub fn deactivate_if_stuck(
 
 /// Spawn the next tetromino if there is no active tetromino.  This should also
 /// update the next tetromino window.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_next_tetromino(
     mut commands: Commands,
     mut state: ResMut<GameState>,

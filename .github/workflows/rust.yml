@@ -12,29 +12,36 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: ghcr.io/usf272s26/test-box-blox-local:0.1.1
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Copy student code into grading project
+      - name: Install system dependencies
         run: |
-          cp Cargo.toml /grading/
-          cp -r src/* /grading/src/
-          cp -r tests/* /grading/tests/
-          mkdir -p /grading/test_data/
-          cp -r test_data/* /grading/test_data/
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config \
+            libasound2-dev \
+            libudev-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libvulkan-dev
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
 
       - name: Run fmt check
-        working-directory: /grading
         run: cargo fmt --check
 
       - name: Run Clippy
-        working-directory: /grading
         run: cargo clippy --no-default-features --features ci -- -D warnings
 
       - name: Run tests
-        working-directory: /grading
         run: cargo nextest run --no-default-features --features ci --verbose --no-fail-fast --retries 2
-

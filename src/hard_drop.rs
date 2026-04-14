@@ -11,6 +11,7 @@ use crate::{
 #[derive(Component, Default)]
 pub struct HardDrop(pub bool);
 
+/// Spawn the small status text that shows whether hard drop is enabled.
 pub fn setup_status_text(mut commands: Commands) {
     // Spawn the status text once during startup.
     // The text begins as "Off" because hard drop is disabled by default.
@@ -73,6 +74,7 @@ fn update_status_text(
     status.1.0 = format!("Hard Drop: {label}");
 }
 
+/// Plugin that wires hard-drop input, state updates, and status text refresh.
 pub struct HardDropPlugin;
 
 impl Plugin for HardDropPlugin {

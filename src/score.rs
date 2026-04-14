@@ -93,6 +93,7 @@ fn update_score_text(
     );
 }
 
+/// Plugin that wires score updates and score/level UI refresh.
 pub struct ScorePlugin;
 
 impl Plugin for ScorePlugin {

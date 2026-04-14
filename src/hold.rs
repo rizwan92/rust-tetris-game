@@ -35,6 +35,7 @@ fn queue_hold_input(
 /// This system also has to make sure that the swap is legal and kick the piece
 /// up by up to 4 times until the swap is legal.  If that is not possible, then
 /// abort the swap.
+#[allow(clippy::too_many_arguments)]
 pub fn swap_hold(
     // Read and clear the pending hold request.
     mut pending_hold: ResMut<PendingHold>,
@@ -271,6 +272,7 @@ pub fn swap_hold(
     commands.spawn((next_piece, Next));
 }
 
+/// Create the logical hold preview window used by the hold feature.
 pub fn setup_hold_window(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -293,6 +295,7 @@ pub fn setup_hold_window(
     );
 }
 
+/// Plugin that wires hold input, hold swapping, and hold preview rendering.
 pub struct HoldPlugin;
 
 impl Plugin for HoldPlugin {

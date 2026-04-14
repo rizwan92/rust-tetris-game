@@ -2,16 +2,13 @@
 
 use super::board::Block;
 use super::data::*;
-use bevy::prelude::*;
 #[cfg(feature = "score")]
 use crate::score::LinesCleared;
+use bevy::prelude::*;
 
 /// Return whether the given tetromino collides with any of the obstacles or it
 /// is out of bounds.
-pub fn there_is_collision(
-    tetromino: &Tetromino,
-    obstacles: Query<&Block, With<Obstacle>>,
-) -> bool {
+pub fn there_is_collision(tetromino: &Tetromino, obstacles: Query<&Block, With<Obstacle>>) -> bool {
     // First reject any position that leaves the legal board area.
     // This includes going past the walls, the floor, or the spawn ceiling.
     if !tetromino.in_bounds() {
