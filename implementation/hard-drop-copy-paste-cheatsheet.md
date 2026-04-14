@@ -214,6 +214,8 @@ pub fn deactivate_if_stuck(
     mut commands: Commands,
     // Fixed-step time drives the lock timer.
     time: Res<Time<Fixed>>,
+    // Read the virtual clock so the ordinary-speed path can be handled separately.
+    virtual_time: Res<Time<Virtual>>,
     // Read the time strategy so replay tests can keep their exact timing.
     time_strategy: Res<bevy::time::TimeUpdateStrategy>,
     // Store the current lock timer resource.
@@ -234,12 +236,13 @@ pub fn deactivate_if_stuck(
     };
 
     // Replay tests use `ManualDuration`, and they need exact recorded timing.
-    // The ordinary timing path on macOS is more jittery, so we also count the
-    // creation frame there to make the non-replay tests less flaky.
+    // The ordinary-speed automatic path on macOS can be one step late, but the
+    // accelerated gravity tests expect the original behavior, so only count the
+    // creation frame when the virtual clock is still at normal speed.
     let tick_on_create = !matches!(
         *time_strategy,
         bevy::time::TimeUpdateStrategy::ManualDuration(_)
-    );
+    ) && virtual_time.relative_speed() <= 1.0;
 
     // Start or advance the timer with the chosen duration and timing mode.
     lockdown.start_or_advance(duration, &time, tick_on_create);

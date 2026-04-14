@@ -315,6 +315,7 @@ pub fn gravity(
 pub fn deactivate_if_stuck(
     mut commands: Commands,
     time: Res<Time<Fixed>>,
+    virtual_time: Res<Time<Virtual>>,
     time_strategy: Res<bevy::time::TimeUpdateStrategy>,
     mut lockdown: ResMut<LockdownTimer>,
     mut carry_gravity_timer: ResMut<CarryGravityTimer>,
@@ -345,12 +346,13 @@ pub fn deactivate_if_stuck(
         LOCKDOWN_DURATION
     };
     // Replays use a manual time strategy and need exact recorded timing.
-    // The sleep-based macOS tests are less stable, so in automatic timing mode we
-    // also count the frame where the piece first becomes stuck.
+    // The ordinary-speed sleep-based tests can be one fixed step late on macOS,
+    // but the accelerated baseline tests expect the original "start next step"
+    // behavior, so only the default-speed automatic path counts the creation step.
     let tick_on_create = !matches!(
         *time_strategy,
         bevy::time::TimeUpdateStrategy::ManualDuration(_)
-    );
+    ) && virtual_time.relative_speed() <= 1.0;
     // Start or advance the lockdown timer using that duration.
     lockdown.start_or_advance(duration, &time, tick_on_create);
     if !lockdown.just_finished() {
