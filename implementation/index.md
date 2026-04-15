@@ -16,6 +16,7 @@ Current feature notes:
 1. [Baseline](./01-baseline.md)
 2. [Config](./02-config.md)
 3. [Collision](./03-collision.md)
+4. [Score](./04-score.md)
 
 Local testing rule:
 
