@@ -510,6 +510,25 @@ pub fn deactivate_if_stuck(
         return;
     }
 
+    // When an ordinary auto-drop is blocked on a piece that was already in
+    // lockdown, the replay expects that frame to count as the blocked gravity
+    // probe, not as an extra lockdown advancement as well. The gravity system
+    // resets the timer to zero in that exact case, so we can recognize it here
+    // and let the next fixed frame advance lockdown instead.
+    if waiting_before_lock
+        && state.manual_drop_gravity == SOFT_DROP_GRAVITY
+        && state.gravity_timer.elapsed().is_zero()
+    {
+        trace_event(format!(
+            "deactivate_if_stuck: skipped same-frame lockdown advance after blocked ordinary auto-drop for {:?}, obstacles={} {} {}",
+            tetromino,
+            obstacle_count,
+            lockdown_snapshot(&lockdown),
+            gravity_snapshot(&state),
+        ));
+        return;
+    }
+
     // The piece is resting on the floor or on something else,
     // so advance the lock countdown.
     trace_event(format!(
