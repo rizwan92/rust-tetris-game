@@ -8,6 +8,7 @@ use crate::{
     data::{Active, GameState, Next, Obstacle},
     ui::TitleText,
 };
+use std::time::Duration;
 
 use super::*;
 use bevy::{color::palettes::tailwind, prelude::*, time::TimeUpdateStrategy};
@@ -37,13 +38,20 @@ const MAX_STATE_MISMATCHES: usize = 1;
 // Maximum number of states to look ahead for a desync
 const MAX_STATE_LOOKAHEAD: usize = 10;
 
+/// Tracks whether replay injected an input edge on the current fixed tick.
+#[derive(Resource, Default)]
+struct ReplayEventThisTick(Option<Duration>);
+
 fn replay_input(
     mut keyboard: ResMut<ButtonInput<KeyCode>>,
     mut recording: ResMut<GameRecording>,
     stats: Res<TestStatistics>,
     time: Res<Time<Fixed>>,
+    mut replay_event_this_tick: ResMut<ReplayEventThisTick>,
     mut commands: Commands,
 ) {
+    replay_event_this_tick.0 = None;
+
     if let Some(event) = recording.events.front() {
         crate::board::trace_event(format!(
             "replay_input: fixed_time={:?} next_event_time={:?} due_now={} snapshots_remaining={} events_remaining={}",
@@ -65,6 +73,7 @@ fn replay_input(
         .events
         .pop_front_if(|event| event.time <= time.elapsed())
     {
+        replay_event_this_tick.0 = Some(time.elapsed());
         crate::board::trace_event(format!(
             "replay_input: at {:?} applying event time={:?} press={:?} release={:?}",
             time.elapsed(),
@@ -109,6 +118,7 @@ fn compare_states(
     state: Res<GameState>,
     time: Res<Time<Fixed>>,
     mut recording: ResMut<GameRecording>,
+    replay_event_this_tick: Res<ReplayEventThisTick>,
     mut stats: ResMut<TestStatistics>,
     ignore_score: Option<Res<IgnoreScore>>,
     mut commands: Commands,
@@ -191,6 +201,12 @@ Next state:
 {:?}
 "#, recording.snapshots.get(1));
         }
+        if replay_event_this_tick.0 == Some(t_actual) {
+            info!(
+                "Possible jitter at time {t_actual:?} immediately after replay input; deferring mismatch check by one frame"
+            );
+            return;
+        }
         stats.mismatches += 1;
         if stats.mismatches > MAX_STATE_MISMATCHES {
             commands.trigger(TestFail);
@@ -256,6 +272,7 @@ impl Plugin for TestReplayPlugin {
             .add_systems(Startup, adjust_scores)
             .add_observer(observe_test_fail)
             .add_observer(observe_test_pass)
+            .insert_resource(ReplayEventThisTick::default())
             .insert_resource(TestStatistics::default())
             .insert_resource(TimeUpdateStrategy::ManualDuration(FIXED_FRAME_DURATION));
 

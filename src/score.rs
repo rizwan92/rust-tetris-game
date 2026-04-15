@@ -81,13 +81,29 @@ fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
         state.lines_cleared_since_last_level -= (state.level + 1) * 10;
         state.level += 1;
 
-        // Gravity should immediately use the faster interval for the new level.
-        // Resetting the timer here keeps the implementation simple and matches
-        // the idea that level-up starts a fresh drop interval.
-        state.gravity_timer = Timer::new(state.drop_interval(), TimerMode::Repeating);
+        // Gravity should immediately use the faster interval for the new level,
+        // but we should not throw away the time the current piece has already
+        // spent falling.
+        //
+        // Example:
+        // if the old timer had already accumulated 0.46s and the new interval
+        // is 0.71s, the next automatic drop should happen after about 0.25s,
+        // not after a completely fresh 0.71s wait.
+        let carried_elapsed = state.gravity_timer.elapsed();
+        let new_duration = state.drop_interval();
+        state.gravity_timer = Timer::new(new_duration, TimerMode::Repeating);
+        if carried_elapsed >= new_duration {
+            // If the new level is so fast that this carry would already have
+            // finished the timer, schedule the drop on the very next fixed
+            // step instead of inventing a brand-new full interval.
+            state.gravity_timer.almost_finish();
+        } else {
+            state.gravity_timer.set_elapsed(carried_elapsed);
+        }
         crate::board::trace_event(format!(
-            "update_score: leveled up to {} and reset gravity to {}",
+            "update_score: leveled up to {} and carried gravity elapsed={:.3}s into {}",
             state.level,
+            carried_elapsed.as_secs_f32(),
             crate::board::gravity_snapshot(&state)
         ));
     }
