@@ -65,7 +65,7 @@ impl LockdownTimer {
         self.0.as_ref().is_some_and(Timer::just_finished)
     }
 
-    fn reset(&mut self) {
+    pub(crate) fn reset(&mut self) {
         self.0 = None;
     }
 }
@@ -393,6 +393,12 @@ pub fn spawn_next_tetromino(
     }
 
     // Spawn the active gameplay piece.
+    //
+    // A newly spawned piece should always begin with a fresh gravity interval.
+    // If we keep leftover timer progress from the previous piece, the new piece
+    // can fall one row too early, which is exactly the kind of replay mismatch
+    // the deterministic tests are checking for.
+    state.gravity_timer = Timer::new(state.drop_interval(), TimerMode::Repeating);
     commands.spawn((active, Active));
 
     // Peek at the upcoming piece without consuming it.

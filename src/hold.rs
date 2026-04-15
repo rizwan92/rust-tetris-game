@@ -32,22 +32,40 @@ fn queue_hold_input(keyboard: Res<ButtonInput<KeyCode>>, mut pending: ResMut<Pen
 /// This system also has to make sure that the swap is legal and kick the piece
 /// up by up to 4 times until the swap is legal.  If that is not possible, then
 /// abort the swap.
+#[allow(clippy::too_many_arguments)]
 pub fn swap_hold(
     mut commands: Commands,
+    mut keyboard: ResMut<ButtonInput<KeyCode>>,
     mut pending: ResMut<PendingHold>,
     mut state: ResMut<GameState>,
+    mut lockdown: ResMut<LockdownTimer>,
     active_tetrominoes: Query<(Entity, &Tetromino), With<Active>>,
     held_tetrominoes: Query<(Entity, &Tetromino), With<Hold>>,
     next_tetrominoes: Query<Entity, With<Next>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
-    // No pending hold input means this fixed frame has nothing to do.
-    if !pending.0 {
+    // There are 2 ways a hold request can reach this system:
+    //
+    // 1. Direct end-to-end tests press X during `Update`, so we queue the
+    //    request in `PendingHold` and consume it on the next fixed frame.
+    // 2. Replay-based tests inject recorded key presses in `FixedPreUpdate`,
+    //    so the X key is already `just_pressed` by the time `FixedUpdate`
+    //    begins.
+    //
+    // Accept either path here so both kinds of tests line up with the same
+    // gameplay system.
+    let requested_now = keyboard.just_pressed(KeyCode::KeyX);
+    if !pending.0 && !requested_now {
         return;
     }
 
-    // Consume the request now so one press causes at most one swap.
+    // Consume the queued request now so one press causes at most one swap.
     pending.0 = false;
+    // If this request came from the replay path, clear the edge now so the
+    // later `Update` system does not queue the same hold again.
+    if requested_now {
+        keyboard.clear_just_pressed(KeyCode::KeyX);
+    }
 
     // If there is no active piece yet, we cannot perform a hold swap.
     let Ok((active_entity, active_piece)) = active_tetrominoes.single() else {
@@ -173,6 +191,12 @@ pub fn swap_hold(
         // Consume the same bag piece we previously previewed with `peek()`.
         let _ = state.bag.next_tetromino();
     }
+
+    // A swapped-in piece should behave like a fresh active piece.
+    // That means gravity starts a new interval and any old lockdown countdown
+    // from the previous active piece must be cleared.
+    state.gravity_timer = Timer::new(state.drop_interval(), TimerMode::Repeating);
+    lockdown.reset();
 
     commands.spawn((new_active_piece, Active));
     commands.spawn((new_hold_piece, Hold));
