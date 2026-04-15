@@ -62,9 +62,11 @@ pub fn swap_hold(
         active_entity, active_piece
     ));
 
-    // Convert a tetromino back to its canonical spawn-shape version.
-    // We identify the type by color because each tetromino type has a unique
-    // color in this assignment.
+    // Convert a tetromino color back to its canonical type.
+    //
+    // We still need this for bag-spawn calculations because the bag stores
+    // canonical tetrominoes, and because each gameplay color uniquely
+    // identifies one tetromino type in this assignment.
     let canonical_from_color = |color: Color| {
         ALL_TETROMINO_TYPES
             .into_iter()
@@ -73,16 +75,26 @@ pub fn swap_hold(
             .expect("every gameplay tetromino color should map to a canonical piece")
     };
 
-    // Move a canonical tetromino into the hold preview window.
+    // Move a tetromino into the hold preview window while preserving its
+    // current rotation.
+    //
     // Example:
-    // most pieces shift by (2, 2), but the I piece needs one extra upward row
-    // so its long bar is visually centered in the hold window.
+    // if a vertical I piece is held, the replay recordings expect the hold
+    // window to keep it vertical instead of snapping it back to the flat
+    // horizontal spawn pose.
     let to_hold_window = |mut tetromino: Tetromino| {
-        if tetromino.center == (0.5, -0.5) {
-            tetromino.shift(2, 3);
-        } else {
-            tetromino.shift(2, 2);
-        }
+        let preview_center = {
+            let canonical = canonical_from_color(tetromino.color);
+            if canonical.center == (0.5, -0.5) {
+                (2.5, 2.5)
+            } else {
+                (canonical.center.0 + 2.0, canonical.center.1 + 2.0)
+            }
+        };
+
+        let dx = (preview_center.0 - tetromino.center().0).round() as i32;
+        let dy = (preview_center.1 - tetromino.center().1).round() as i32;
+        tetromino.shift(dx, dy);
         tetromino
     };
 
@@ -106,7 +118,10 @@ pub fn swap_hold(
         let dx = (active_piece.center().0 - active_spawn.center().0).round() as i32;
         let dy = (active_piece.center().1 - active_spawn.center().1).round() as i32;
 
-        tetromino = spawn_on_board(tetromino);
+        let incoming_spawn = spawn_on_board(canonical_from_color(tetromino.color));
+        let center_dx = (incoming_spawn.center().0 - tetromino.center().0).round() as i32;
+        let center_dy = (incoming_spawn.center().1 - tetromino.center().1).round() as i32;
+        tetromino.shift(center_dx, center_dy);
         tetromino.shift(dx, dy);
         tetromino
     };
@@ -128,17 +143,15 @@ pub fn swap_hold(
         None
     };
 
-    // The current active piece always moves into the hold window in canonical
-    // orientation.
-    let new_hold_piece = to_hold_window(canonical_from_color(active_piece.color));
+    // The replay recordings keep whatever rotation the player was actually
+    // holding at the moment they pressed X, so preserve the outgoing active
+    // piece shape here instead of snapping it back to the canonical pose.
+    let new_hold_piece = to_hold_window(*active_piece);
 
     // If a piece is already held, swap that one onto the board.
     // Otherwise, use the bag's next piece, but do not consume it until the swap
     // is known to be legal.
-    let held_piece = held_tetrominoes
-        .iter()
-        .next()
-        .map(|(entity, tetromino)| (entity, canonical_from_color(tetromino.color)));
+    let held_piece = held_tetrominoes.iter().next();
     crate::board::trace_event(format!(
         "swap_hold: held_piece_present={} consume_next_piece={}",
         held_piece.is_some(),
@@ -148,7 +161,7 @@ pub fn swap_hold(
     let consume_next_piece = held_piece.is_none();
     let swapped_in_canonical = held_piece
         .as_ref()
-        .map(|(_, tetromino)| *tetromino)
+        .map(|(_, tetromino)| **tetromino)
         .unwrap_or_else(|| state.bag.peek());
 
     // The incoming hold piece should reuse the outgoing active piece's board

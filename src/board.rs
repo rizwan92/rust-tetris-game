@@ -598,16 +598,25 @@ pub fn spawn_next_tetromino(
 
     // Preserve most of the repeating gravity carry across piece transitions.
     //
-    // The replay recordings want the next piece to inherit ordinary partial
-    // carry from the previous piece, but not when the timer is only a frame or
-    // two away from firing.
-    // Example:
-    // if the timer is already 0.64s into a 0.80s interval, keep that carry so
-    // the new piece drops after about 0.16s.
-    //
-    // But if the timer is only 1-2 fixed frames away from firing, reset it so
-    // the new piece does not fall immediately after spawning.
-    if state.gravity_timer.remaining()
+    // There is one special case to normalize first:
+    // if the previous piece locked right after gravity wrapped this frame,
+    // Bevy's repeating timer now looks like it has almost no carry
+    // (`elapsed ~= 0`). The replay data instead expects that fresh spawn to
+    // behave like gravity is almost ready to fire again, so convert that
+    // wrapped carry back into a near-finished timer.
+    if state.gravity_timer.just_finished() {
+        let duration = state.gravity_timer.duration();
+        state.gravity_timer.reset();
+        state
+            .gravity_timer
+            .set_elapsed(duration - crate::rr::FIXED_FRAME_DURATION);
+        trace_event(format!(
+            "spawn_next_tetromino: restored wrapped gravity carry for spawn {}",
+            gravity_snapshot(&state)
+        ));
+    // If the timer is only 1-2 fixed frames away from firing, reset it so the
+    // new piece does not fall immediately after spawning.
+    } else if state.gravity_timer.remaining()
         <= crate::rr::FIXED_FRAME_DURATION + crate::rr::FIXED_FRAME_DURATION
     {
         state.gravity_timer.reset();
