@@ -369,15 +369,17 @@ pub fn gravity(
     mut tetrominoes: Query<&mut Tetromino, With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    let obstacle_count = obstacles.iter().count();
     let active_before = tetrominoes
         .single()
         .ok()
         .map(|tetromino| format!("{:?}", *tetromino))
         .unwrap_or_else(|| "none".to_string());
     trace_event(format!(
-        "gravity: before tick delta={:.3}s active={} {}",
+        "gravity: before tick delta={:.3}s active={} obstacles={} {}",
         time.delta_secs(),
         active_before,
+        obstacle_count,
         gravity_snapshot(&state)
     ));
 
@@ -386,7 +388,8 @@ pub fn gravity(
     // If the timer has not fired yet, do nothing this frame.
     if !state.gravity_timer.just_finished() {
         trace_event(format!(
-            "gravity: timer not ready after tick {}",
+            "gravity: timer not ready after tick remaining={:.3}s {}",
+            state.gravity_timer.remaining().as_secs_f32(),
             gravity_snapshot(&state)
         ));
         return;
@@ -407,8 +410,11 @@ pub fn gravity(
     // Only accept the move when there is no collision.
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
         trace_event(format!(
-            "gravity: moved active from {:?} to {:?}",
-            *tetromino, candidate
+            "gravity: timer fired and moved active from {:?} to {:?}; remaining={:.3}s {}",
+            *tetromino,
+            candidate,
+            state.gravity_timer.remaining().as_secs_f32(),
+            gravity_snapshot(&state)
         ));
         *tetromino = candidate;
     } else {
@@ -418,13 +424,19 @@ pub fn gravity(
         if state.manual_drop_gravity == SOFT_DROP_GRAVITY {
             state.gravity_timer.reset();
             trace_event(format!(
-                "gravity: blocked from moving {:?} to {:?}; reset gravity timer after blocked ordinary auto-drop",
-                *tetromino, candidate
+                "gravity: blocked from moving {:?} to {:?}; reset gravity timer after blocked ordinary auto-drop, obstacles={} {}",
+                *tetromino,
+                candidate,
+                obstacle_count,
+                gravity_snapshot(&state)
             ));
         } else {
             trace_event(format!(
-                "gravity: blocked from moving {:?} to {:?}; preserved gravity timer in hard-drop mode",
-                *tetromino, candidate
+                "gravity: blocked from moving {:?} to {:?}; preserved gravity timer in hard-drop mode, obstacles={} {}",
+                *tetromino,
+                candidate,
+                obstacle_count,
+                gravity_snapshot(&state)
             ));
         }
     }
@@ -438,11 +450,13 @@ pub fn deactivate_if_stuck(
     tetrominoes: Query<(Entity, &Tetromino), With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    let obstacle_count = obstacles.iter().count();
     // If there is no active tetromino, make sure the lockdown timer is clear.
     let Ok((entity, tetromino)) = tetrominoes.single() else {
         trace_event(format!(
-            "deactivate_if_stuck: no active piece, resetting {}",
-            lockdown_snapshot(&lockdown)
+            "deactivate_if_stuck: no active piece, resetting obstacles={} {}",
+            obstacle_count,
+            lockdown_snapshot(&lockdown),
         ));
         lockdown.reset();
         return;
@@ -454,9 +468,10 @@ pub fn deactivate_if_stuck(
     // If downward movement is still possible, the piece is not stuck yet.
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
         trace_event(format!(
-            "deactivate_if_stuck: active {:?} can still move to {:?}, resetting {}",
+            "deactivate_if_stuck: active {:?} can still move to {:?}, resetting obstacles={} {}",
             tetromino,
             candidate,
+            obstacle_count,
             lockdown_snapshot(&lockdown)
         ));
         lockdown.reset();
@@ -466,15 +481,18 @@ pub fn deactivate_if_stuck(
     // The piece is resting on the floor or on something else,
     // so advance the lock countdown.
     trace_event(format!(
-        "deactivate_if_stuck: active {:?} is stuck above {:?}, advancing {}",
+        "deactivate_if_stuck: active {:?} is stuck above {:?}, advancing with delta={:.3}s obstacles={} {}",
         tetromino,
         candidate,
+        time.delta_secs(),
+        obstacle_count,
         lockdown_snapshot(&lockdown)
     ));
     lockdown.start_or_advance(time);
     trace_event(format!(
-        "deactivate_if_stuck: after advance {}",
-        lockdown_snapshot(&lockdown)
+        "deactivate_if_stuck: after advance obstacles={} {}",
+        obstacle_count,
+        lockdown_snapshot(&lockdown),
     ));
     // If the timer has not finished yet, keep waiting.
     if !lockdown.just_finished() {
@@ -482,8 +500,8 @@ pub fn deactivate_if_stuck(
     }
 
     trace_event(format!(
-        "deactivate_if_stuck: locking entity {:?} as obstacles {:?}",
-        entity, tetromino
+        "deactivate_if_stuck: locking entity {:?} as obstacles {:?}; obstacle_count_before={}",
+        entity, tetromino, obstacle_count
     ));
     // The piece is officially locked now, so remove the active tetromino entity.
     commands.entity(entity).despawn();
@@ -520,7 +538,8 @@ pub fn spawn_next_tetromino(
     }
 
     trace_event(format!(
-        "spawn_next_tetromino: spawning new active piece from bag with {}",
+        "spawn_next_tetromino: spawning new active piece from bag with next_preview={:?} {}",
+        state.bag.peek(),
         gravity_snapshot(&state)
     ));
 
@@ -540,6 +559,13 @@ pub fn spawn_next_tetromino(
     } else {
         active.shift(4, 18);
     }
+    trace_event(format!(
+        "spawn_next_tetromino: positioned fresh active {:?} with remaining={:.3}s elapsed={:.3}s just_finished={}",
+        active,
+        state.gravity_timer.remaining().as_secs_f32(),
+        state.gravity_timer.elapsed_secs(),
+        state.gravity_timer.just_finished()
+    ));
 
     // Collision-enabled gameplay must also check whether the new spawn position
     // is already occupied.
@@ -584,6 +610,12 @@ pub fn spawn_next_tetromino(
             gravity_snapshot(&state)
         ));
     }
+    trace_event(format!(
+        "spawn_next_tetromino: final carry before spawn remaining={:.3}s elapsed={:.3}s {}",
+        state.gravity_timer.remaining().as_secs_f32(),
+        state.gravity_timer.elapsed_secs(),
+        gravity_snapshot(&state)
+    ));
 
     // Spawn the active gameplay piece.
     //
