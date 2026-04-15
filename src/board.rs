@@ -467,17 +467,20 @@ pub fn gravity(
 pub fn deactivate_if_stuck(
     mut commands: Commands,
     time: Res<Time<Fixed>>,
+    state: Res<GameState>,
     mut lockdown: ResMut<LockdownTimer>,
     tetrominoes: Query<(Entity, &Tetromino), With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
     let obstacle_count = obstacles.iter().count();
+    let waiting_before_lock = lockdown.0.is_some();
     // If there is no active tetromino, make sure the lockdown timer is clear.
     let Ok((entity, tetromino)) = tetrominoes.single() else {
         trace_event(format!(
-            "deactivate_if_stuck: no active piece, resetting obstacles={} {}",
+            "deactivate_if_stuck: no active piece, resetting obstacles={} {} {}",
             obstacle_count,
             lockdown_snapshot(&lockdown),
+            gravity_snapshot(&state),
         ));
         lockdown.reset();
         return;
@@ -489,11 +492,12 @@ pub fn deactivate_if_stuck(
     // If downward movement is still possible, the piece is not stuck yet.
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
         trace_event(format!(
-            "deactivate_if_stuck: active {:?} can still move to {:?}, resetting obstacles={} {}",
+            "deactivate_if_stuck: active {:?} can still move to {:?}, resetting obstacles={} {} {}",
             tetromino,
             candidate,
             obstacle_count,
-            lockdown_snapshot(&lockdown)
+            lockdown_snapshot(&lockdown),
+            gravity_snapshot(&state),
         ));
         lockdown.reset();
         return;
@@ -502,27 +506,41 @@ pub fn deactivate_if_stuck(
     // The piece is resting on the floor or on something else,
     // so advance the lock countdown.
     trace_event(format!(
-        "deactivate_if_stuck: active {:?} is stuck above {:?}, advancing with delta={:.3}s obstacles={} {}",
+        "deactivate_if_stuck: active {:?} is stuck above {:?}, waiting_before_lock={} advancing with delta={:.3}s obstacles={} {} {}",
         tetromino,
         candidate,
+        waiting_before_lock,
         time.delta_secs(),
         obstacle_count,
-        lockdown_snapshot(&lockdown)
+        lockdown_snapshot(&lockdown),
+        gravity_snapshot(&state),
     ));
     lockdown.start_or_advance(time);
     trace_event(format!(
-        "deactivate_if_stuck: after advance obstacles={} {}",
+        "deactivate_if_stuck: after advance obstacles={} {} {}",
         obstacle_count,
         lockdown_snapshot(&lockdown),
+        gravity_snapshot(&state),
     ));
     // If the timer has not finished yet, keep waiting.
     if !lockdown.just_finished() {
+        trace_event(format!(
+            "deactivate_if_stuck: lock pending for {:?}, candidate_below={:?} {} {}",
+            tetromino,
+            candidate,
+            lockdown_snapshot(&lockdown),
+            gravity_snapshot(&state),
+        ));
         return;
     }
 
     trace_event(format!(
-        "deactivate_if_stuck: locking entity {:?} as obstacles {:?}; obstacle_count_before={}",
-        entity, tetromino, obstacle_count
+        "deactivate_if_stuck: locking entity {:?} as obstacles {:?}; obstacle_count_before={} {} {}",
+        entity,
+        tetromino,
+        obstacle_count,
+        lockdown_snapshot(&lockdown),
+        gravity_snapshot(&state),
     ));
     // The piece is officially locked now, so remove the active tetromino entity.
     commands.entity(entity).despawn();
@@ -541,6 +559,12 @@ pub fn deactivate_if_stuck(
     }
     // Clear the timer so the next spawned piece starts fresh.
     lockdown.reset();
+    trace_event(format!(
+        "deactivate_if_stuck: finished lock for {:?}, timer reset {} {}",
+        tetromino,
+        lockdown_snapshot(&lockdown),
+        gravity_snapshot(&state),
+    ));
 }
 
 /// Spawn the next tetromino if there is no active tetromino.  This should also
