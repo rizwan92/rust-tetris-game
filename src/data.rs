@@ -1,7 +1,7 @@
 //! Data structures and fixtures used by the ECS framework
 
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use serde::{Serialize, Deserialize};
 
 use bevy::{color::palettes::tailwind, prelude::*};
 

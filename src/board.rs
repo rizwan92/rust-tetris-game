@@ -5,8 +5,8 @@ use std::time::Duration;
 use crate::ui::{BG_COLOR, PADDING};
 
 use super::data::*;
-use serde::{Serialize, Deserialize};
 use bevy::{platform::collections::HashMap, prelude::*};
+use serde::{Deserialize, Serialize};
 
 /// The main board containing visible tiles.
 #[derive(Resource)]
