@@ -18,6 +18,7 @@ Current feature notes:
 3. [Collision](./03-collision.md)
 4. [Score](./04-score.md)
 5. [RNG](./05-rng.md)
+6. [Hard Drop](./06-hard-drop.md)
 
 Local testing rule:
 
