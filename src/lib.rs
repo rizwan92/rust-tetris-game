@@ -72,22 +72,15 @@ pub fn build_app(app: &mut App, cfg: config::GameConfig) {
                 .in_set(Game),
         )
         .add_systems(
-            PostUpdate,
-            (
-                handle_user_input,
-                clear_just_spawned,
-                redraw_board,
-                redraw_side_board::<Next>,
-            )
-                .chain()
-                .in_set(Game),
+            Update,
+            (handle_user_input, redraw_board, redraw_side_board::<Next>).in_set(Game),
         );
 
     #[cfg(all(not(feature = "ci"), not(feature = "test")))]
     app.add_systems(Startup, setup_window);
 
     if cfg.animate_title {
-        app.add_systems(PostUpdate, animate_title);
+        app.add_systems(Update, animate_title);
     }
 
     #[cfg(feature = "score")]

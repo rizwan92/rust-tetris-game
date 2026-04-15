@@ -42,7 +42,7 @@ impl Bag for DeterministicBag {
 #[cfg(feature = "rng")]
 mod random {
     use super::*;
-    use rand::{SeedableRng, rngs::SmallRng, seq::SliceRandom};
+    use rand::{SeedableRng, rngs::SmallRng};
 
     /// The random tile bag
     #[derive(PartialEq, Debug)]
@@ -53,60 +53,25 @@ mod random {
 
     impl RandomBag {
         /// Create a bag from given starting RNG seed.
-        pub fn from_seed(seed: u64) -> Self {
-            // `seed: u64` is the fixed number that makes the random order repeat.
-            // Example: using seed `727` should always give the same shuffled order.
-            // That is what makes seeded tests deterministic.
-            Self {
-                // Start empty so the first peek/pop forces a refill.
-                remaining_pieces: vec![],
-                // Build a reproducible RNG from the provided seed.
-                rng: SmallRng::seed_from_u64(seed),
-            }
+        pub fn from_seed(_seed: u64) -> Self {
+            todo!("Create an empty bag, seed the RNG from the given value.")
         }
 
         // Refill the bag if it is empty.  This should create one of each
         // tetromino, shuffle them, and put them in the bag.
         fn refill(&mut self) {
-            // This function should only run when the bag is empty.
             debug_assert!(self.remaining_pieces.is_empty());
-            // Rebuild the bag with exactly one copy of each tetromino type.
-            self.remaining_pieces = ALL_TETROMINO_TYPES
-                .into_iter()
-                .map(get_tetromino)
-                .collect::<Vec<_>>();
-            // Shuffle the vector in place using the stored RNG.
-            // The shuffled order is what later `peek` and `pop` will follow.
-            self.remaining_pieces.shuffle(&mut self.rng);
+            todo!()
         }
     }
 
     impl Bag for RandomBag {
         fn next_tetromino(&mut self) -> Tetromino {
-            // Refill first if there are no pieces left to take.
-            if self.remaining_pieces.is_empty() {
-                self.refill();
-            }
-
-            // Take from the back so seeded tests match the expected order.
-            // This must stay consistent with `peek`, which uses `last()`.
-            self.remaining_pieces
-                .pop()
-                .expect("bag should contain a tetromino after refill")
+            todo!("Get the next tetromino from the bag.  Refill it if necessary")
         }
 
         fn peek(&mut self) -> Tetromino {
-            // Refill first if there are no pieces left to inspect.
-            if self.remaining_pieces.is_empty() {
-                self.refill();
-            }
-
-            // Look at the same back element that `next_tetromino` will remove.
-            // Using `last()` here keeps `peek` and `pop()` in sync.
-            *self
-                .remaining_pieces
-                .last()
-                .expect("bag should contain a tetromino after refill")
+            todo!()
         }
     }
 

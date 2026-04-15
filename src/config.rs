@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{bag::*, data::*};
 
 /// Game configuration to read from the user or from the tests.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct GameConfig {
     /// The type of bag for this game.
     pub bag: BagType,
@@ -31,15 +31,8 @@ impl GameConfig {
 
     #[cfg(feature = "config")]
     /// Read a configuration from given JSON data.
-    pub fn load(json: &str) -> Result<Self, serde_json::Error> {
-        // `json: &str` means this function receives raw JSON text.
-        // Example input: `{"bag":"Deterministic","animate_title":true}`.
-        // We return either a parsed config or a serde parsing error.
-
-        // Ask serde_json to build the whole `GameConfig` from the JSON text.
-        // This works because the struct already derives `Deserialize`.
-        // So serde knows how to map JSON fields into Rust fields.
-        serde_json::from_str(json)
+    pub fn load(_json: &str) -> Result<Self, serde_json::Error> {
+        todo!()
     }
 }
 
@@ -110,43 +103,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "config")]
-    fn load_deterministic_config() {
-        // This JSON uses the simple deterministic bag form.
-        // It matches the config style used by the provided test data.
-        let json = r#"{"bag":"Deterministic","animate_title":true}"#;
-        // Parse the JSON into a real `GameConfig`.
-        let cfg = GameConfig::load(json).expect("config should parse");
-        // Check that the bag variant is correct after parsing.
-        assert_eq!(cfg.bag, BagType::Deterministic);
-        // Check that the title-animation flag stayed true.
-        assert!(cfg.animate_title);
-    }
-
-    #[test]
-    #[cfg(feature = "config")]
-    fn load_animate_title_false() {
-        // This JSON keeps the same bag but changes the title flag.
-        let json = r#"{"bag":"Deterministic","animate_title":false}"#;
-        // Parse the JSON into a real `GameConfig`.
-        let cfg = GameConfig::load(json).expect("config should parse");
-        // The bag should still be deterministic.
-        assert_eq!(cfg.bag, BagType::Deterministic);
-        // The animation flag should now be false.
-        assert!(!cfg.animate_title);
-    }
-
-    #[test]
-    #[cfg(feature = "config")]
-    fn load_rejects_invalid_json() {
-        // This JSON is intentionally broken at the end.
-        // The goal of this test is to make sure invalid config text fails cleanly.
-        let json = r#"{"bag":"Deterministic","animate_title":tru"#;
-        // Invalid JSON should return an error instead of a valid config.
-        assert!(GameConfig::load(json).is_err());
-    }
-
-    #[test]
     #[cfg(feature = "rng")]
     fn bag_creation() {
         let cfg = GameConfig {
@@ -182,31 +138,5 @@ mod tests {
             (state1.bag.as_ref() as &dyn Any).downcast_ref::<RandomBag>(),
             (state2.bag.as_ref() as &dyn Any).downcast_ref::<RandomBag>()
         );
-    }
-
-    #[test]
-    #[cfg(all(feature = "config", feature = "rng"))]
-    fn load_fixed_seed_config() {
-        // This JSON uses serde's tagged enum shape for `FixedSeed`.
-        let json = r#"{"bag":{"FixedSeed":727},"animate_title":true}"#;
-        // Parse the JSON into a config value.
-        let cfg = GameConfig::load(json).expect("config should parse");
-        // Check that the bag became the right fixed-seed variant.
-        assert_eq!(cfg.bag, BagType::FixedSeed(727));
-        // Check that the title flag also parsed correctly.
-        assert!(cfg.animate_title);
-    }
-
-    #[test]
-    #[cfg(all(feature = "config", feature = "rng"))]
-    fn load_random_seed_config() {
-        // Unit enum variants are represented as plain strings in serde JSON.
-        let json = r#"{"bag":"RandomSeed","animate_title":false}"#;
-        // Parse the JSON into a config value.
-        let cfg = GameConfig::load(json).expect("config should parse");
-        // Check that the random-seed variant was selected.
-        assert_eq!(cfg.bag, BagType::RandomSeed);
-        // Check that the title flag stayed false.
-        assert!(!cfg.animate_title);
     }
 }
