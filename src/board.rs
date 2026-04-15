@@ -602,8 +602,9 @@ pub fn spawn_next_tetromino(
     // In ordinary mode we reset a nearly-finished timer so a freshly spawned
     // piece does not drop almost immediately.
     //
-    // Hard-drop replays depend on preserving that carry instead, so only apply
-    // this smoothing when the game is still in its baseline soft-drop mode.
+    // Hard-drop replays depend on preserving that carry instead, except for
+    // the extreme sub-frame case below where the piece would auto-drop on the
+    // very next fixed tick.
     } else if state.manual_drop_gravity == SOFT_DROP_GRAVITY
         && state.gravity_timer.remaining()
             <= crate::rr::FIXED_FRAME_DURATION + crate::rr::FIXED_FRAME_DURATION
@@ -611,6 +612,16 @@ pub fn spawn_next_tetromino(
         state.gravity_timer.reset();
         trace_event(format!(
             "spawn_next_tetromino: reset gravity timer on near-finished spawn {}",
+            gravity_snapshot(&state)
+        ));
+    // Hard-drop replays still want to preserve most gravity carry, but if the
+    // timer has less than one fixed frame left then the piece would auto-drop
+    // immediately on the next frame. Those recordings expect us to smooth that
+    // case out and give the new piece a fresh interval instead.
+    } else if state.gravity_timer.remaining() <= crate::rr::FIXED_FRAME_DURATION {
+        state.gravity_timer.reset();
+        trace_event(format!(
+            "spawn_next_tetromino: reset hard-drop gravity timer with sub-frame carry {}",
             gravity_snapshot(&state)
         ));
     }
