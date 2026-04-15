@@ -41,13 +41,6 @@ pub struct Block {
 #[allow(dead_code)] // remove after your implementation
 pub struct LockdownTimer(Option<Timer>);
 
-/// Whether the current active piece was just created this frame.
-///
-/// We use this to stop a newly spawned/swapped piece from immediately reacting
-/// to the same input edge that belonged to the previous piece.
-#[derive(Resource, Default)]
-pub struct FreshActivePiece(pub bool);
-
 /// Whether lifecycle tracing is enabled for test and CI runs.
 pub(crate) fn trace_enabled() -> bool {
     cfg!(any(feature = "ci", feature = "test")) && std::env::var_os("BLOX_TRACE").is_some()
@@ -85,19 +78,6 @@ pub(crate) fn gravity_snapshot(state: &GameState) -> String {
         state.manual_drop_gravity,
         state.level
     )
-}
-
-/// Clear the "fresh piece" flag at the beginning of the next fixed frame.
-pub(crate) fn clear_fresh_active_piece(mut fresh_active: ResMut<FreshActivePiece>) {
-    // Spawn/swap code sets this flag when it creates a new active piece.
-    // We keep it set through the following `Update` stage so the new piece
-    // cannot inherit the previous piece's last input edge.
-    //
-    // On the next fixed frame we clear it, allowing normal input again.
-    if fresh_active.0 {
-        trace_event("clear_fresh_active_piece: fresh piece guard expired".to_string());
-        fresh_active.0 = false;
-    }
 }
 
 #[allow(dead_code)] // remove after your implementation
@@ -266,7 +246,6 @@ pub fn setup_board(
 pub fn handle_user_input(
     mut keyboard: ResMut<ButtonInput<KeyCode>>,
     state: Res<GameState>,
-    fresh_active: ResMut<FreshActivePiece>,
     mut lockdown: ResMut<LockdownTimer>,
     mut tetrominoes: Query<&mut Tetromino, With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
@@ -277,25 +256,6 @@ pub fn handle_user_input(
     let up = keyboard.just_pressed(KeyCode::ArrowUp);
     let space = keyboard.just_pressed(KeyCode::Space);
     let saw_input = down || left || right || up || space;
-
-    // When a brand-new active piece appears, ignore input for this one update.
-    // Example:
-    // if the previous piece hard-drops and a new piece spawns in the same app
-    // update, that new piece should not also consume the old piece's last
-    // left/right/down press.
-    if fresh_active.0 {
-        if saw_input {
-            trace_event(format!(
-                "handle_user_input: ignored inherited input down={down} left={left} right={right} up={up} space={space} while fresh=true"
-            ));
-        }
-        keyboard.clear_just_pressed(KeyCode::ArrowDown);
-        keyboard.clear_just_pressed(KeyCode::ArrowLeft);
-        keyboard.clear_just_pressed(KeyCode::ArrowRight);
-        keyboard.clear_just_pressed(KeyCode::ArrowUp);
-        keyboard.clear_just_pressed(KeyCode::Space);
-        return;
-    }
 
     // If there is no active tetromino yet, there is nothing to move.
     let Ok(mut tetromino) = tetrominoes.single_mut() else {
@@ -550,7 +510,6 @@ pub fn spawn_next_tetromino(
     mut commands: Commands,
     mut keyboard: ResMut<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
-    mut fresh_active: ResMut<FreshActivePiece>,
     active_tetrominoes: Query<Entity, With<Active>>,
     next_tetrominoes: Query<Entity, With<Next>>,
     obstacles: Query<&Block, With<Obstacle>>,
@@ -628,7 +587,6 @@ pub fn spawn_next_tetromino(
 
     // Spawn the active gameplay piece.
     //
-    fresh_active.0 = true;
     keyboard.clear_just_pressed(KeyCode::ArrowDown);
     keyboard.clear_just_pressed(KeyCode::ArrowLeft);
     keyboard.clear_just_pressed(KeyCode::ArrowRight);

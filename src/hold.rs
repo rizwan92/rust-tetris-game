@@ -24,7 +24,6 @@ pub fn swap_hold(
     mut commands: Commands,
     mut keyboard: ResMut<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
-    mut fresh_active: ResMut<FreshActivePiece>,
     mut lockdown: ResMut<LockdownTimer>,
     active_tetrominoes: Query<(Entity, &Tetromino), With<Active>>,
     held_tetrominoes: Query<(Entity, &Tetromino), With<Hold>>,
@@ -201,10 +200,12 @@ pub fn swap_hold(
         crate::board::trace_event("swap_hold: consumed next bag piece".to_string());
     }
 
-    // A swapped-in piece should behave like a fresh active piece with respect
-    // to locking, but we keep the ordinary gravity timer semantics so replay
-    // timing stays aligned with the provided recordings.
-    fresh_active.0 = true;
+    // Clear any leftover input edge from the outgoing piece before the swapped
+    // piece becomes active.
+    //
+    // Example:
+    // if X was pressed during the same app update, the incoming held piece
+    // must not also inherit an ArrowUp or ArrowLeft edge from the previous one.
     keyboard.clear_just_pressed(KeyCode::ArrowDown);
     keyboard.clear_just_pressed(KeyCode::ArrowLeft);
     keyboard.clear_just_pressed(KeyCode::ArrowRight);
