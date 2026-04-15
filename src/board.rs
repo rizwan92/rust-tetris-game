@@ -41,6 +41,11 @@ pub struct Block {
 #[allow(dead_code)] // remove after your implementation
 pub struct LockdownTimer(Option<Timer>);
 
+/// Whether the current fixed step already spent its automatic gravity probe on
+/// a blocked downward move.
+#[derive(Resource, Default)]
+pub struct BlockedAutoDrop(pub bool);
+
 /// Whether lifecycle tracing is enabled for test and CI runs.
 pub(crate) fn trace_enabled() -> bool {
     cfg!(any(feature = "ci", feature = "test")) && std::env::var_os("BLOX_TRACE").is_some()
@@ -240,6 +245,7 @@ pub fn setup_board(
 
     commands.add_observer(exit_on_game_over);
     commands.insert_resource(LockdownTimer(None));
+    commands.insert_resource(BlockedAutoDrop::default());
 }
 
 /// Handle user input for the purposes of moving and/or rotating the tetromino.
@@ -306,13 +312,27 @@ pub fn handle_user_input(
             // Otherwise accept the lower position.
             *tetromino = candidate;
             moved_rows += 1;
-            // A successful move means the piece is no longer "waiting to lock"
-            // at the previous position, so reset the lockdown timer.
-            lockdown.reset();
-            trace_event(format!(
-                "handle_user_input: soft-drop moved active to {:?} and reset lockdown",
-                *tetromino
-            ));
+            // Only reset lockdown when the moved piece is no longer grounded.
+            //
+            // If a move keeps the piece resting on the floor or stack, the
+            // existing lock countdown should continue instead of restarting
+            // from scratch.
+            let mut below = *tetromino;
+            below.shift(0, -1);
+            if !crate::there_is_collision(&below, obstacles.reborrow())
+                || state.manual_drop_gravity == SOFT_DROP_GRAVITY
+            {
+                lockdown.reset();
+                trace_event(format!(
+                    "handle_user_input: soft-drop moved active to {:?} and reset lockdown",
+                    *tetromino
+                ));
+            } else {
+                trace_event(format!(
+                    "handle_user_input: soft-drop moved active to {:?} but kept lockdown because it remained grounded",
+                    *tetromino
+                ));
+            }
         }
         trace_event(format!(
             "handle_user_input: ArrowDown finished moved_rows={} active_now={:?} {} {}",
@@ -332,11 +352,22 @@ pub fn handle_user_input(
         // Only commit the move when it stays legal.
         if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
             *tetromino = candidate;
-            lockdown.reset();
-            trace_event(format!(
-                "handle_user_input: moved left to {:?} and reset lockdown",
-                *tetromino
-            ));
+            let mut below = *tetromino;
+            below.shift(0, -1);
+            if !crate::there_is_collision(&below, obstacles.reborrow())
+                || state.manual_drop_gravity == SOFT_DROP_GRAVITY
+            {
+                lockdown.reset();
+                trace_event(format!(
+                    "handle_user_input: moved left to {:?} and reset lockdown",
+                    *tetromino
+                ));
+            } else {
+                trace_event(format!(
+                    "handle_user_input: moved left to {:?} but kept lockdown because it remained grounded",
+                    *tetromino
+                ));
+            }
         }
         keyboard.clear_just_pressed(KeyCode::ArrowLeft);
     }
@@ -347,11 +378,22 @@ pub fn handle_user_input(
         candidate.shift(1, 0);
         if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
             *tetromino = candidate;
-            lockdown.reset();
-            trace_event(format!(
-                "handle_user_input: moved right to {:?} and reset lockdown",
-                *tetromino
-            ));
+            let mut below = *tetromino;
+            below.shift(0, -1);
+            if !crate::there_is_collision(&below, obstacles.reborrow())
+                || state.manual_drop_gravity == SOFT_DROP_GRAVITY
+            {
+                lockdown.reset();
+                trace_event(format!(
+                    "handle_user_input: moved right to {:?} and reset lockdown",
+                    *tetromino
+                ));
+            } else {
+                trace_event(format!(
+                    "handle_user_input: moved right to {:?} but kept lockdown because it remained grounded",
+                    *tetromino
+                ));
+            }
         }
         keyboard.clear_just_pressed(KeyCode::ArrowRight);
     }
@@ -364,11 +406,22 @@ pub fn handle_user_input(
         candidate.rotate();
         if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
             *tetromino = candidate;
-            lockdown.reset();
-            trace_event(format!(
-                "handle_user_input: rotated to {:?} and reset lockdown",
-                *tetromino
-            ));
+            let mut below = *tetromino;
+            below.shift(0, -1);
+            if !crate::there_is_collision(&below, obstacles.reborrow())
+                || state.manual_drop_gravity == SOFT_DROP_GRAVITY
+            {
+                lockdown.reset();
+                trace_event(format!(
+                    "handle_user_input: rotated to {:?} and reset lockdown",
+                    *tetromino
+                ));
+            } else {
+                trace_event(format!(
+                    "handle_user_input: rotated to {:?} but kept lockdown because it remained grounded",
+                    *tetromino
+                ));
+            }
         }
         keyboard.clear_just_pressed(KeyCode::ArrowUp);
         keyboard.clear_just_pressed(KeyCode::Space);
@@ -388,9 +441,11 @@ pub fn gravity(
     time: Res<Time<Fixed>>,
     mut state: ResMut<GameState>,
     lockdown: Res<LockdownTimer>,
+    mut blocked_auto_drop: ResMut<BlockedAutoDrop>,
     mut tetrominoes: Query<&mut Tetromino, With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    blocked_auto_drop.0 = false;
     let obstacle_count = obstacles.iter().count();
     let active_before = tetrominoes
         .single()
@@ -444,29 +499,26 @@ pub fn gravity(
         ));
         *tetromino = candidate;
     } else {
-        // Ordinary mode wants a fresh interval after a blocked automatic drop.
-        // Hard-drop recordings, however, expect that carry to survive so the
-        // next spawned piece can still inherit it.
-        if state.manual_drop_gravity == SOFT_DROP_GRAVITY {
-            state.gravity_timer.reset();
-            trace_event(format!(
-                "gravity: blocked from moving {:?} to {:?}; reset gravity timer after blocked ordinary auto-drop, obstacles={} {} {}",
-                *tetromino,
-                candidate,
-                obstacle_count,
-                gravity_snapshot(&state),
-                lockdown_snapshot(&lockdown),
-            ));
-        } else {
-            trace_event(format!(
-                "gravity: blocked from moving {:?} to {:?}; preserved gravity timer in hard-drop mode, obstacles={} {} {}",
-                *tetromino,
-                candidate,
-                obstacle_count,
-                gravity_snapshot(&state),
-                lockdown_snapshot(&lockdown),
-            ));
-        }
+        blocked_auto_drop.0 = true;
+        // Keep the repeating gravity timer continuous even when an automatic
+        // drop is blocked.
+        //
+        // This gives us one global gravity schedule instead of two conflicting
+        // interpretations of the timer:
+        // 1. "time until the active piece should auto-drop"
+        // 2. "heuristic carry value we might rewrite during spawn"
+        //
+        // The replay recordings are much happier when the timer simply keeps
+        // its wrapped remainder here and the next piece inherits that schedule
+        // naturally.
+        trace_event(format!(
+            "gravity: blocked from moving {:?} to {:?}; preserved continuous gravity schedule, obstacles={} {} {}",
+            *tetromino,
+            candidate,
+            obstacle_count,
+            gravity_snapshot(&state),
+            lockdown_snapshot(&lockdown),
+        ));
     }
 }
 
@@ -476,6 +528,7 @@ pub fn deactivate_if_stuck(
     time: Res<Time<Fixed>>,
     state: Res<GameState>,
     mut lockdown: ResMut<LockdownTimer>,
+    blocked_auto_drop: Res<BlockedAutoDrop>,
     tetrominoes: Query<(Entity, &Tetromino), With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
@@ -510,17 +563,16 @@ pub fn deactivate_if_stuck(
         return;
     }
 
-    // When an ordinary auto-drop is blocked on a piece that was already in
-    // lockdown, the replay expects that frame to count as the blocked gravity
-    // probe, not as an extra lockdown advancement as well. The gravity system
-    // resets the timer to zero in that exact case, so we can recognize it here
-    // and let the next fixed frame advance lockdown instead.
-    if waiting_before_lock
-        && state.manual_drop_gravity == SOFT_DROP_GRAVITY
-        && state.gravity_timer.elapsed().is_zero()
+    // If the current fixed step already spent its automatic gravity probe on a
+    // blocked move, treat that as the "ground check" for this frame.
+    //
+    // That keeps lockdown from effectively advancing twice in one fixed step:
+    // once because gravity discovered the block, and again because this system
+    // immediately sees the same grounded piece.
+    if waiting_before_lock && blocked_auto_drop.0 && state.manual_drop_gravity == SOFT_DROP_GRAVITY
     {
         trace_event(format!(
-            "deactivate_if_stuck: skipped same-frame lockdown advance after blocked ordinary auto-drop for {:?}, obstacles={} {} {}",
+            "deactivate_if_stuck: skipped same-frame lockdown advance after blocked auto-drop for {:?}, obstacles={} {} {}",
             tetromino,
             obstacle_count,
             lockdown_snapshot(&lockdown),
@@ -652,47 +704,28 @@ pub fn spawn_next_tetromino(
         return;
     }
 
-    // Preserve most of the repeating gravity carry across piece transitions.
+    // Most spawns should inherit the repeating gravity schedule naturally.
     //
-    // There is one special case to normalize first:
-    // if the previous piece locked right after gravity wrapped this frame,
-    // Bevy's repeating timer now looks like it has almost no carry
-    // (`elapsed ~= 0`). The replay data instead expects that fresh spawn to
-    // behave like gravity is almost ready to fire again, so convert that
-    // wrapped carry back into a near-finished timer.
-    if state.gravity_timer.just_finished() {
-        let duration = state.gravity_timer.duration();
-        state.gravity_timer.reset();
-        state
-            .gravity_timer
-            .set_elapsed(duration - crate::rr::FIXED_FRAME_DURATION);
-        trace_event(format!(
-            "spawn_next_tetromino: restored wrapped gravity carry for spawn {}",
-            gravity_snapshot(&state)
-        ));
-    // In ordinary mode we reset a nearly-finished timer so a freshly spawned
-    // piece does not drop almost immediately.
-    //
-    // Hard-drop replays depend on preserving that carry instead, except for
-    // the extreme sub-frame case below where the piece would auto-drop on the
-    // very next fixed tick.
-    } else if state.manual_drop_gravity == SOFT_DROP_GRAVITY
-        && state.gravity_timer.remaining()
-            <= crate::rr::FIXED_FRAME_DURATION + crate::rr::FIXED_FRAME_DURATION
+    // The replay recordings only need smoothing in the extreme "tiny leftover"
+    // cases:
+    // - hard drop keeps the broader one-frame smoothing rule
+    // - ordinary soft drop only smooths the truly tiny remainder that would
+    //   otherwise create a phantom one-frame auto-drop immediately after spawn
+    let soft_spawn_smoothing = crate::rr::FIXED_FRAME_DURATION.mul_f32(0.5);
+    if state.manual_drop_gravity > SOFT_DROP_GRAVITY
+        && state.gravity_timer.remaining() <= crate::rr::FIXED_FRAME_DURATION
     {
         state.gravity_timer.reset();
         trace_event(format!(
-            "spawn_next_tetromino: reset gravity timer on near-finished spawn {}",
+            "spawn_next_tetromino: reset hard-drop gravity timer with sub-frame carry {}",
             gravity_snapshot(&state)
         ));
-    // Hard-drop replays still want to preserve most gravity carry, but if the
-    // timer has less than one fixed frame left then the piece would auto-drop
-    // immediately on the next frame. Those recordings expect us to smooth that
-    // case out and give the new piece a fresh interval instead.
-    } else if state.gravity_timer.remaining() <= crate::rr::FIXED_FRAME_DURATION {
+    } else if state.manual_drop_gravity == SOFT_DROP_GRAVITY
+        && state.gravity_timer.remaining() < soft_spawn_smoothing
+    {
         state.gravity_timer.reset();
         trace_event(format!(
-            "spawn_next_tetromino: reset hard-drop gravity timer with sub-frame carry {}",
+            "spawn_next_tetromino: reset soft-drop gravity timer with tiny carry {}",
             gravity_snapshot(&state)
         ));
     }
