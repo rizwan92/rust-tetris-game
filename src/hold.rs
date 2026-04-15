@@ -86,40 +86,27 @@ pub fn swap_hold(
         tetromino
     };
 
-    // Move a canonical tetromino onto the board so its top-left corner matches
-    // the outgoing active piece's top-left corner.
+    // Move a canonical tetromino onto the board while preserving how far the
+    // outgoing piece had already drifted from its own spawn location.
     //
-    // This matches the behavior expected by the hold tests:
-    // - the incoming piece does not jump back to the top spawn row
-    // - it also does not keep the exact floating-point center of the outgoing
-    //   piece, because different tetromino shapes use different centers.
+    // Example:
+    // if a falling I piece has moved down by 2 rows from its normal spawn,
+    // the swapped-in S piece should also appear 2 rows below the S spawn row.
     let to_active_anchor = |mut tetromino: Tetromino| {
-        let active_min_x = active_piece
-            .cells()
-            .iter()
-            .map(|cell| cell.0)
-            .min()
-            .expect("active tetromino should have cells");
-        let active_max_y = active_piece
-            .cells()
-            .iter()
-            .map(|cell| cell.1)
-            .max()
-            .expect("active tetromino should have cells");
-        let tetromino_min_x = tetromino
-            .cells()
-            .iter()
-            .map(|cell| cell.0)
-            .min()
-            .expect("canonical tetromino should have cells");
-        let tetromino_max_y = tetromino
-            .cells()
-            .iter()
-            .map(|cell| cell.1)
-            .max()
-            .expect("canonical tetromino should have cells");
-        let dx = active_min_x - tetromino_min_x;
-        let dy = active_max_y - tetromino_max_y;
+        let spawn_on_board = |mut tetromino: Tetromino| {
+            if tetromino.center == (0.5, -0.5) {
+                tetromino.shift(4, 19);
+            } else {
+                tetromino.shift(4, 18);
+            }
+            tetromino
+        };
+
+        let active_spawn = spawn_on_board(canonical_from_color(active_piece.color));
+        let dx = (active_piece.center().0 - active_spawn.center().0).round() as i32;
+        let dy = (active_piece.center().1 - active_spawn.center().1).round() as i32;
+
+        tetromino = spawn_on_board(tetromino);
         tetromino.shift(dx, dy);
         tetromino
     };

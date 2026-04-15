@@ -590,6 +590,23 @@ pub fn spawn_next_tetromino(
         return;
     }
 
+    // Hard-drop mode intentionally speeds up manual down input, but the
+    // recordings expect a newly spawned bag piece to start with a fresh
+    // gravity interval instead of inheriting an almost-finished one from the
+    // previous hard-dropped piece.
+    //
+    // Example:
+    // if manual gravity is 20 and the previous piece locked with only a few
+    // milliseconds left on the timer, the next piece should still appear on
+    // its spawn row for a full interval.
+    if state.manual_drop_gravity > SOFT_DROP_GRAVITY {
+        state.gravity_timer.reset();
+        trace_event(format!(
+            "spawn_next_tetromino: reset gravity timer for hard-drop/manual spawn {}",
+            gravity_snapshot(&state)
+        ));
+    }
+
     // Spawn the active gameplay piece.
     //
     fresh_active.0 = true;
