@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{bag::*, data::*};
 
 /// Game configuration to read from the user or from the tests.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct GameConfig {
     /// The type of bag for this game.
     pub bag: BagType,
@@ -31,8 +31,12 @@ impl GameConfig {
 
     #[cfg(feature = "config")]
     /// Read a configuration from given JSON data.
-    pub fn load(_json: &str) -> Result<Self, serde_json::Error> {
-        todo!()
+    pub fn load(json: &str) -> Result<Self, serde_json::Error> {
+        // Deserialize the JSON text directly into `GameConfig`.
+        // Example:
+        // {"bag":"Deterministic","animate_title":true}
+        // becomes a fully typed Rust value.
+        serde_json::from_str(json)
     }
 }
 
@@ -100,6 +104,46 @@ mod tests {
             GameState::initial_drop_interval()
         );
         assert_eq!(state.gravity_timer.mode(), TimerMode::Repeating);
+    }
+
+    #[test]
+    #[cfg(feature = "config")]
+    fn load_deterministic_config() {
+        // This is the smallest valid config in the baseline/config stage.
+        let json = r#"{"bag":"Deterministic","animate_title":true}"#;
+
+        // Parse the JSON into the strongly typed game config.
+        let cfg = GameConfig::load(json).expect("config JSON should parse");
+
+        // Check that each field was read correctly.
+        assert_eq!(
+            cfg,
+            GameConfig {
+                bag: BagType::Deterministic,
+                animate_title: true,
+            }
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "config")]
+    fn load_animate_title_false() {
+        // This test focuses only on the animate_title flag.
+        let json = r#"{"bag":"Deterministic","animate_title":false}"#;
+
+        let cfg = GameConfig::load(json).expect("config JSON should parse");
+
+        assert!(!cfg.animate_title);
+        assert_eq!(cfg.bag, BagType::Deterministic);
+    }
+
+    #[test]
+    #[cfg(feature = "config")]
+    fn load_rejects_invalid_json() {
+        // Missing the closing brace, so serde_json should reject it.
+        let json = r#"{"bag":"Deterministic","animate_title":true"#;
+
+        assert!(GameConfig::load(json).is_err());
     }
 
     #[test]

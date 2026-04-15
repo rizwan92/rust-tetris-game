@@ -14,6 +14,7 @@ Our branch strategy is:
 Current feature notes:
 
 1. [Baseline](./01-baseline.md)
+2. [Config](./02-config.md)
 
 Local testing rule:
 
