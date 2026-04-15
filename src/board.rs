@@ -599,10 +599,14 @@ pub fn spawn_next_tetromino(
             "spawn_next_tetromino: restored wrapped gravity carry for spawn {}",
             gravity_snapshot(&state)
         ));
-    // If the timer is only 1-2 fixed frames away from firing, reset it so the
-    // new piece does not fall immediately after spawning.
-    } else if state.gravity_timer.remaining()
-        <= crate::rr::FIXED_FRAME_DURATION + crate::rr::FIXED_FRAME_DURATION
+    // In ordinary mode we reset a nearly-finished timer so a freshly spawned
+    // piece does not drop almost immediately.
+    //
+    // Hard-drop replays depend on preserving that carry instead, so only apply
+    // this smoothing when the game is still in its baseline soft-drop mode.
+    } else if state.manual_drop_gravity == SOFT_DROP_GRAVITY
+        && state.gravity_timer.remaining()
+            <= crate::rr::FIXED_FRAME_DURATION + crate::rr::FIXED_FRAME_DURATION
     {
         state.gravity_timer.reset();
         trace_event(format!(
