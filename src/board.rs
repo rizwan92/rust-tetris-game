@@ -282,16 +282,30 @@ pub fn handle_user_input(
     if keyboard.just_pressed(KeyCode::ArrowDown) {
         // The game state decides how strong a manual drop is.
         // In the baseline this is usually 1, but hard drop will reuse this later.
-        for _ in 0..state.manual_drop_gravity {
+        let mut moved_rows = 0;
+        for step in 0..state.manual_drop_gravity {
             // Create a candidate piece one row lower.
             let mut candidate = *tetromino;
             candidate.shift(0, -1);
+            trace_event(format!(
+                "handle_user_input: ArrowDown step={} trying {:?} -> {:?} {} {}",
+                step,
+                *tetromino,
+                candidate,
+                gravity_snapshot(&state),
+                lockdown_snapshot(&lockdown)
+            ));
             // If moving down would be illegal, stop the manual drop loop.
             if crate::there_is_collision(&candidate, obstacles.reborrow()) {
+                trace_event(format!(
+                    "handle_user_input: ArrowDown blocked at step={} candidate={:?}",
+                    step, candidate
+                ));
                 break;
             }
             // Otherwise accept the lower position.
             *tetromino = candidate;
+            moved_rows += 1;
             // A successful move means the piece is no longer "waiting to lock"
             // at the previous position, so reset the lockdown timer.
             lockdown.reset();
@@ -300,6 +314,13 @@ pub fn handle_user_input(
                 *tetromino
             ));
         }
+        trace_event(format!(
+            "handle_user_input: ArrowDown finished moved_rows={} active_now={:?} {} {}",
+            moved_rows,
+            *tetromino,
+            gravity_snapshot(&state),
+            lockdown_snapshot(&lockdown)
+        ));
         keyboard.clear_just_pressed(KeyCode::ArrowDown);
     }
 

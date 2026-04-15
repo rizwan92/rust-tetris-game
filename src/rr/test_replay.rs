@@ -44,6 +44,23 @@ fn replay_input(
     time: Res<Time<Fixed>>,
     mut commands: Commands,
 ) {
+    if let Some(event) = recording.events.front() {
+        crate::board::trace_event(format!(
+            "replay_input: fixed_time={:?} next_event_time={:?} due_now={} snapshots_remaining={} events_remaining={}",
+            time.elapsed(),
+            event.time,
+            event.time <= time.elapsed(),
+            recording.snapshots.len(),
+            recording.events.len()
+        ));
+    } else {
+        crate::board::trace_event(format!(
+            "replay_input: fixed_time={:?} no more events snapshots_remaining={}",
+            time.elapsed(),
+            recording.snapshots.len()
+        ));
+    }
+
     if let Some(event) = recording
         .events
         .pop_front_if(|event| event.time <= time.elapsed())
@@ -61,6 +78,15 @@ fn replay_input(
         for key in &event.just_pressed {
             keyboard.press(*key);
         }
+        crate::board::trace_event(format!(
+            "replay_input: after apply fixed_time={:?} pressed_down={} pressed_left={} pressed_right={} pressed_up={} pressed_space={}",
+            time.elapsed(),
+            keyboard.pressed(KeyCode::ArrowDown),
+            keyboard.pressed(KeyCode::ArrowLeft),
+            keyboard.pressed(KeyCode::ArrowRight),
+            keyboard.pressed(KeyCode::ArrowUp),
+            keyboard.pressed(KeyCode::Space)
+        ));
     }
 
     if recording.events.is_empty() {
