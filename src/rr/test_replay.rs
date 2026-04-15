@@ -66,6 +66,7 @@ fn replay_input(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn compare_states(
     active: Option<Single<&Tetromino, With<Active>>>,
     next: Option<Single<&Tetromino, With<Next>>>,
