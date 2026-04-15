@@ -54,6 +54,9 @@ pub fn delete_full_lines(
     // 2. move higher rows down by the right amount
     let full_rows = counts.map(|count| count == BOARD_WIDTH);
     let lines_cleared = full_rows.iter().filter(|is_full| **is_full).count();
+    crate::board::trace_event(format!(
+        "delete_full_lines: counts={counts:?} full_rows={full_rows:?} lines_cleared={lines_cleared}"
+    ));
 
     // If there are no full rows, this system has nothing to do this frame.
     if lines_cleared == 0 {
@@ -68,6 +71,10 @@ pub fn delete_full_lines(
         // Example:
         // if row 0 is full, every obstacle with cell.y == 0 disappears.
         if (0..BOARD_HEIGHT as i32).contains(&y) && full_rows[y as usize] {
+            crate::board::trace_event(format!(
+                "delete_full_lines: despawning obstacle entity={:?} block={:?}",
+                entity, *block
+            ));
             commands.entity(entity).despawn();
             continue;
         }
@@ -84,12 +91,21 @@ pub fn delete_full_lines(
 
         // Only adjust the y coordinate when something was cleared below.
         if drop_by > 0 {
+            crate::board::trace_event(format!(
+                "delete_full_lines: moving obstacle entity={:?} from {:?} down by {}",
+                entity, *block, drop_by
+            ));
             block.cell.1 -= drop_by;
         }
     }
 
     // When the score feature is enabled, line clear scoring listens to this
     // event. We trigger it only after we know how many rows disappeared.
+    #[cfg(feature = "score")]
+    crate::board::trace_event(format!(
+        "delete_full_lines: triggering LinesCleared({})",
+        lines_cleared
+    ));
     #[cfg(feature = "score")]
     commands.trigger(crate::score::LinesCleared(lines_cleared as u32));
 }

@@ -41,6 +41,65 @@ pub struct Block {
 #[allow(dead_code)] // remove after your implementation
 pub struct LockdownTimer(Option<Timer>);
 
+/// Whether the current active piece was just created this frame.
+///
+/// We use this to stop a newly spawned/swapped piece from immediately reacting
+/// to the same input edge that belonged to the previous piece.
+#[derive(Resource, Default)]
+pub struct FreshActivePiece(pub bool);
+
+/// Whether lifecycle tracing is enabled for test and CI runs.
+pub(crate) fn trace_enabled() -> bool {
+    cfg!(any(feature = "ci", feature = "test")) && std::env::var_os("BLOX_TRACE").is_some()
+}
+
+/// Print one structured lifecycle trace line when tracing is enabled.
+pub(crate) fn trace_event(event: String) {
+    if trace_enabled() {
+        eprintln!("[blox-trace] {event}");
+    }
+}
+
+/// Return a short string describing the lock timer.
+pub(crate) fn lockdown_snapshot(lockdown: &LockdownTimer) -> String {
+    match &lockdown.0 {
+        Some(timer) => format!(
+            "lockdown=some(elapsed={:.3}s duration={:.3}s finished={} just_finished={})",
+            timer.elapsed_secs(),
+            timer.duration().as_secs_f32(),
+            timer.is_finished(),
+            timer.just_finished()
+        ),
+        None => "lockdown=none".to_string(),
+    }
+}
+
+/// Return a short string describing the gravity timer.
+pub(crate) fn gravity_snapshot(state: &GameState) -> String {
+    format!(
+        "gravity(elapsed={:.3}s duration={:.3}s finished={} just_finished={} manual_drop={} level={})",
+        state.gravity_timer.elapsed_secs(),
+        state.gravity_timer.duration().as_secs_f32(),
+        state.gravity_timer.is_finished(),
+        state.gravity_timer.just_finished(),
+        state.manual_drop_gravity,
+        state.level
+    )
+}
+
+/// Clear the "fresh piece" flag at the beginning of the next fixed frame.
+pub(crate) fn clear_fresh_active_piece(mut fresh_active: ResMut<FreshActivePiece>) {
+    // Spawn/swap code sets this flag when it creates a new active piece.
+    // We keep it set through the following `Update` stage so the new piece
+    // cannot inherit the previous piece's last input edge.
+    //
+    // On the next fixed frame we clear it, allowing normal input again.
+    if fresh_active.0 {
+        trace_event("clear_fresh_active_piece: fresh piece guard expired".to_string());
+        fresh_active.0 = false;
+    }
+}
+
 #[allow(dead_code)] // remove after your implementation
 impl LockdownTimer {
     // Advance the timer. Start it if it hasn't been started.
@@ -205,16 +264,57 @@ pub fn setup_board(
 
 /// Handle user input for the purposes of moving and/or rotating the tetromino.
 pub fn handle_user_input(
-    keyboard: Res<ButtonInput<KeyCode>>,
+    mut keyboard: ResMut<ButtonInput<KeyCode>>,
     state: Res<GameState>,
+    fresh_active: ResMut<FreshActivePiece>,
     mut lockdown: ResMut<LockdownTimer>,
     mut tetrominoes: Query<&mut Tetromino, With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    let down = keyboard.just_pressed(KeyCode::ArrowDown);
+    let left = keyboard.just_pressed(KeyCode::ArrowLeft);
+    let right = keyboard.just_pressed(KeyCode::ArrowRight);
+    let up = keyboard.just_pressed(KeyCode::ArrowUp);
+    let space = keyboard.just_pressed(KeyCode::Space);
+    let saw_input = down || left || right || up || space;
+
+    // When a brand-new active piece appears, ignore input for this one update.
+    // Example:
+    // if the previous piece hard-drops and a new piece spawns in the same app
+    // update, that new piece should not also consume the old piece's last
+    // left/right/down press.
+    if fresh_active.0 {
+        if saw_input {
+            trace_event(format!(
+                "handle_user_input: ignored inherited input down={down} left={left} right={right} up={up} space={space} while fresh=true"
+            ));
+        }
+        keyboard.clear_just_pressed(KeyCode::ArrowDown);
+        keyboard.clear_just_pressed(KeyCode::ArrowLeft);
+        keyboard.clear_just_pressed(KeyCode::ArrowRight);
+        keyboard.clear_just_pressed(KeyCode::ArrowUp);
+        keyboard.clear_just_pressed(KeyCode::Space);
+        return;
+    }
+
     // If there is no active tetromino yet, there is nothing to move.
     let Ok(mut tetromino) = tetrominoes.single_mut() else {
+        if saw_input {
+            trace_event(format!(
+                "handle_user_input: saw input down={down} left={left} right={right} up={up} space={space} but no active piece existed"
+            ));
+        }
         return;
     };
+
+    if saw_input {
+        trace_event(format!(
+            "handle_user_input: begin down={down} left={left} right={right} up={up} space={space} active_before={:?} {} {}",
+            *tetromino,
+            gravity_snapshot(&state),
+            lockdown_snapshot(&lockdown)
+        ));
+    }
 
     // Down happens first by the baseline spec.
     // Example:
@@ -235,7 +335,12 @@ pub fn handle_user_input(
             // A successful move means the piece is no longer "waiting to lock"
             // at the previous position, so reset the lockdown timer.
             lockdown.reset();
+            trace_event(format!(
+                "handle_user_input: soft-drop moved active to {:?} and reset lockdown",
+                *tetromino
+            ));
         }
+        keyboard.clear_just_pressed(KeyCode::ArrowDown);
     }
 
     // Left happens after down.
@@ -247,7 +352,12 @@ pub fn handle_user_input(
         if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
             *tetromino = candidate;
             lockdown.reset();
+            trace_event(format!(
+                "handle_user_input: moved left to {:?} and reset lockdown",
+                *tetromino
+            ));
         }
+        keyboard.clear_just_pressed(KeyCode::ArrowLeft);
     }
 
     // Right happens after left.
@@ -257,7 +367,12 @@ pub fn handle_user_input(
         if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
             *tetromino = candidate;
             lockdown.reset();
+            trace_event(format!(
+                "handle_user_input: moved right to {:?} and reset lockdown",
+                *tetromino
+            ));
         }
+        keyboard.clear_just_pressed(KeyCode::ArrowRight);
     }
 
     // Up or Space means rotate.
@@ -269,7 +384,21 @@ pub fn handle_user_input(
         if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
             *tetromino = candidate;
             lockdown.reset();
+            trace_event(format!(
+                "handle_user_input: rotated to {:?} and reset lockdown",
+                *tetromino
+            ));
         }
+        keyboard.clear_just_pressed(KeyCode::ArrowUp);
+        keyboard.clear_just_pressed(KeyCode::Space);
+    }
+
+    if saw_input {
+        trace_event(format!(
+            "handle_user_input: end active_after={:?} {}",
+            *tetromino,
+            lockdown_snapshot(&lockdown)
+        ));
     }
 }
 
@@ -280,15 +409,35 @@ pub fn gravity(
     mut tetrominoes: Query<&mut Tetromino, With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    let active_before = tetrominoes
+        .single()
+        .ok()
+        .map(|tetromino| format!("{:?}", *tetromino))
+        .unwrap_or_else(|| "none".to_string());
+    trace_event(format!(
+        "gravity: before tick delta={:.3}s active={} {}",
+        time.delta_secs(),
+        active_before,
+        gravity_snapshot(&state)
+    ));
+
     // Advance the repeating gravity timer every fixed frame.
     state.gravity_timer.tick(time.delta());
     // If the timer has not fired yet, do nothing this frame.
     if !state.gravity_timer.just_finished() {
+        trace_event(format!(
+            "gravity: timer not ready after tick {}",
+            gravity_snapshot(&state)
+        ));
         return;
     }
 
     // No active piece means there is nothing to drop.
     let Ok(mut tetromino) = tetrominoes.single_mut() else {
+        trace_event(format!(
+            "gravity: timer fired but there was no active piece {}",
+            gravity_snapshot(&state)
+        ));
         return;
     };
 
@@ -297,7 +446,16 @@ pub fn gravity(
     candidate.shift(0, -1);
     // Only accept the move when there is no collision.
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
+        trace_event(format!(
+            "gravity: moved active from {:?} to {:?}",
+            *tetromino, candidate
+        ));
         *tetromino = candidate;
+    } else {
+        trace_event(format!(
+            "gravity: blocked from moving {:?} to {:?}",
+            *tetromino, candidate
+        ));
     }
 }
 
@@ -311,6 +469,10 @@ pub fn deactivate_if_stuck(
 ) {
     // If there is no active tetromino, make sure the lockdown timer is clear.
     let Ok((entity, tetromino)) = tetrominoes.single() else {
+        trace_event(format!(
+            "deactivate_if_stuck: no active piece, resetting {}",
+            lockdown_snapshot(&lockdown)
+        ));
         lockdown.reset();
         return;
     };
@@ -320,18 +482,38 @@ pub fn deactivate_if_stuck(
     candidate.shift(0, -1);
     // If downward movement is still possible, the piece is not stuck yet.
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
+        trace_event(format!(
+            "deactivate_if_stuck: active {:?} can still move to {:?}, resetting {}",
+            tetromino,
+            candidate,
+            lockdown_snapshot(&lockdown)
+        ));
         lockdown.reset();
         return;
     }
 
     // The piece is resting on the floor or on something else,
     // so advance the lock countdown.
+    trace_event(format!(
+        "deactivate_if_stuck: active {:?} is stuck above {:?}, advancing {}",
+        tetromino,
+        candidate,
+        lockdown_snapshot(&lockdown)
+    ));
     lockdown.start_or_advance(time);
+    trace_event(format!(
+        "deactivate_if_stuck: after advance {}",
+        lockdown_snapshot(&lockdown)
+    ));
     // If the timer has not finished yet, keep waiting.
     if !lockdown.just_finished() {
         return;
     }
 
+    trace_event(format!(
+        "deactivate_if_stuck: locking entity {:?} as obstacles {:?}",
+        entity, tetromino
+    ));
     // The piece is officially locked now, so remove the active tetromino entity.
     commands.entity(entity).despawn();
     // Replace that tetromino with four obstacle blocks.
@@ -355,7 +537,9 @@ pub fn deactivate_if_stuck(
 /// update the next tetromino window.
 pub fn spawn_next_tetromino(
     mut commands: Commands,
+    mut keyboard: ResMut<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
+    mut fresh_active: ResMut<FreshActivePiece>,
     active_tetrominoes: Query<Entity, With<Active>>,
     next_tetrominoes: Query<Entity, With<Next>>,
     obstacles: Query<&Block, With<Obstacle>>,
@@ -364,6 +548,11 @@ pub fn spawn_next_tetromino(
     if !active_tetrominoes.is_empty() {
         return;
     }
+
+    trace_event(format!(
+        "spawn_next_tetromino: spawning new active piece from bag with {}",
+        gravity_snapshot(&state)
+    ));
 
     // Remove the old preview piece before creating the new one.
     for entity in &next_tetrominoes {
@@ -388,17 +577,28 @@ pub fn spawn_next_tetromino(
     // if the stack has reached the top and the new piece overlaps it
     // immediately, the game is over and we should not spawn an illegal piece.
     if crate::there_is_collision(&active, obstacles) {
+        trace_event(format!(
+            "spawn_next_tetromino: spawn collision for {:?}, triggering game over",
+            active
+        ));
         commands.trigger(GameOver);
         return;
     }
 
     // Spawn the active gameplay piece.
     //
-    // A newly spawned piece should always begin with a fresh gravity interval.
-    // If we keep leftover timer progress from the previous piece, the new piece
-    // can fall one row too early, which is exactly the kind of replay mismatch
-    // the deterministic tests are checking for.
-    state.gravity_timer = Timer::new(state.drop_interval(), TimerMode::Repeating);
+    fresh_active.0 = true;
+    keyboard.clear_just_pressed(KeyCode::ArrowDown);
+    keyboard.clear_just_pressed(KeyCode::ArrowLeft);
+    keyboard.clear_just_pressed(KeyCode::ArrowRight);
+    keyboard.clear_just_pressed(KeyCode::ArrowUp);
+    keyboard.clear_just_pressed(KeyCode::Space);
+    trace_event(format!(
+        "spawn_next_tetromino: committed active={:?} next_preview_before_shift={:?} {}",
+        active,
+        state.bag.peek(),
+        gravity_snapshot(&state)
+    ));
     commands.spawn((active, Active));
 
     // Peek at the upcoming piece without consuming it.
@@ -406,6 +606,10 @@ pub fn spawn_next_tetromino(
     // Shift the preview tetromino into the center of the 5x5 next window.
     next.shift(2, 2);
     // Spawn the logical preview piece.
+    trace_event(format!(
+        "spawn_next_tetromino: spawned next preview {:?}",
+        next
+    ));
     commands.spawn((next, Next));
 }
 

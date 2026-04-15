@@ -11,19 +11,6 @@ use bevy::prelude::*;
 #[derive(Component, Copy, Clone)]
 pub struct Hold;
 
-/// A queued request to perform one hold swap on the next fixed frame.
-#[derive(Resource, Default)]
-pub struct PendingHold(bool);
-
-/// Record that the player requested a hold swap.
-fn queue_hold_input(keyboard: Res<ButtonInput<KeyCode>>, mut pending: ResMut<PendingHold>) {
-    // The hold recordings and the direct end-to-end tests both use KeyX.
-    // We only need a boolean because one pending swap request is enough.
-    if keyboard.just_pressed(KeyCode::KeyX) {
-        pending.0 = true;
-    }
-}
-
 /// Swap the current piece and the piece in the hold window on user input.
 ///
 /// If no piece is held, then take the next piece as the active piece and move
@@ -36,41 +23,44 @@ fn queue_hold_input(keyboard: Res<ButtonInput<KeyCode>>, mut pending: ResMut<Pen
 pub fn swap_hold(
     mut commands: Commands,
     mut keyboard: ResMut<ButtonInput<KeyCode>>,
-    mut pending: ResMut<PendingHold>,
     mut state: ResMut<GameState>,
+    mut fresh_active: ResMut<FreshActivePiece>,
     mut lockdown: ResMut<LockdownTimer>,
     active_tetrominoes: Query<(Entity, &Tetromino), With<Active>>,
     held_tetrominoes: Query<(Entity, &Tetromino), With<Hold>>,
     next_tetrominoes: Query<Entity, With<Next>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
-    // There are 2 ways a hold request can reach this system:
+    // We intentionally react to the X edge directly here.
     //
-    // 1. Direct end-to-end tests press X during `Update`, so we queue the
-    //    request in `PendingHold` and consume it on the next fixed frame.
-    // 2. Replay-based tests inject recorded key presses in `FixedPreUpdate`,
-    //    so the X key is already `just_pressed` by the time `FixedUpdate`
-    //    begins.
+    // Why run this system in both `FixedUpdate` and `Update`?
+    // - Replay tests inject inputs in `FixedPreUpdate`, so `FixedUpdate`
+    //   should be able to consume the hold request in the same fixed frame.
+    // - Direct headless tests press X during `Update`, and some of them do not
+    //   guarantee that another fixed step will happen immediately afterward.
     //
-    // Accept either path here so both kinds of tests line up with the same
-    // gameplay system.
-    let requested_now = keyboard.just_pressed(KeyCode::KeyX);
-    if !pending.0 && !requested_now {
+    // Clearing the `just_pressed` edge after we consume it prevents a double
+    // swap when both schedules run in the same app update.
+    if !keyboard.just_pressed(KeyCode::KeyX) {
         return;
     }
-
-    // Consume the queued request now so one press causes at most one swap.
-    pending.0 = false;
-    // If this request came from the replay path, clear the edge now so the
-    // later `Update` system does not queue the same hold again.
-    if requested_now {
-        keyboard.clear_just_pressed(KeyCode::KeyX);
-    }
+    crate::board::trace_event(format!(
+        "swap_hold: received X press manual_drop={} held_count={} next_count={}",
+        state.manual_drop_gravity,
+        held_tetrominoes.iter().count(),
+        next_tetrominoes.iter().count()
+    ));
+    keyboard.clear_just_pressed(KeyCode::KeyX);
 
     // If there is no active piece yet, we cannot perform a hold swap.
     let Ok((active_entity, active_piece)) = active_tetrominoes.single() else {
+        crate::board::trace_event("swap_hold: ignored because no active piece existed".to_string());
         return;
     };
+    crate::board::trace_event(format!(
+        "swap_hold: active before swap entity={:?} piece={:?}",
+        active_entity, active_piece
+    ));
 
     // Convert a tetromino back to its canonical spawn-shape version.
     // We identify the type by color because each tetromino type has a unique
@@ -96,30 +86,40 @@ pub fn swap_hold(
         tetromino
     };
 
-    // Move a canonical tetromino into the normal board spawn position.
-    // Example:
-    // the I piece spawns one row higher than the other pieces.
-    let to_board_spawn = |mut tetromino: Tetromino| {
-        if tetromino.center == (0.5, -0.5) {
-            tetromino.shift(4, 19);
-        } else {
-            tetromino.shift(4, 18);
-        }
-        tetromino
-    };
-
-    // Move a canonical tetromino onto the board using the current active
-    // piece's rounded center as the anchor.
-    // Example:
-    // if the active piece center is (4.0, 6.0), the swapped-in piece should
-    // also be centered around row 6 instead of jumping back to the top spawn.
+    // Move a canonical tetromino onto the board so its top-left corner matches
+    // the outgoing active piece's top-left corner.
     //
-    // Rounding is important because the I piece uses a half-cell center like
-    // (4.5, 18.5). Rounding that to (4, 18) reproduces the expected swap
-    // position for the first-hold tests.
-    let to_board_position = |mut tetromino: Tetromino| {
-        let dx = active_piece.center.0.round() as i32;
-        let dy = active_piece.center.1.round() as i32;
+    // This matches the behavior expected by the hold tests:
+    // - the incoming piece does not jump back to the top spawn row
+    // - it also does not keep the exact floating-point center of the outgoing
+    //   piece, because different tetromino shapes use different centers.
+    let to_active_anchor = |mut tetromino: Tetromino| {
+        let active_min_x = active_piece
+            .cells()
+            .iter()
+            .map(|cell| cell.0)
+            .min()
+            .expect("active tetromino should have cells");
+        let active_max_y = active_piece
+            .cells()
+            .iter()
+            .map(|cell| cell.1)
+            .max()
+            .expect("active tetromino should have cells");
+        let tetromino_min_x = tetromino
+            .cells()
+            .iter()
+            .map(|cell| cell.0)
+            .min()
+            .expect("canonical tetromino should have cells");
+        let tetromino_max_y = tetromino
+            .cells()
+            .iter()
+            .map(|cell| cell.1)
+            .max()
+            .expect("canonical tetromino should have cells");
+        let dx = active_min_x - tetromino_min_x;
+        let dy = active_max_y - tetromino_max_y;
         tetromino.shift(dx, dy);
         tetromino
     };
@@ -152,6 +152,11 @@ pub fn swap_hold(
         .iter()
         .next()
         .map(|(entity, tetromino)| (entity, canonical_from_color(tetromino.color)));
+    crate::board::trace_event(format!(
+        "swap_hold: held_piece_present={} consume_next_piece={}",
+        held_piece.is_some(),
+        held_piece.is_none()
+    ));
 
     let consume_next_piece = held_piece.is_none();
     let swapped_in_canonical = held_piece
@@ -159,22 +164,25 @@ pub fn swap_hold(
         .map(|(_, tetromino)| *tetromino)
         .unwrap_or_else(|| state.bag.peek());
 
-    // In ordinary gameplay, the held-in piece re-enters at the usual spawn
-    // row.
-    //
-    // When hard drop mode is enabled, the provided replay expects the held-in
-    // piece to continue from the current active piece's board position instead
-    // of jumping back to the top.
-    let candidate_piece = if state.manual_drop_gravity == HARD_DROP_GRAVITY {
-        to_board_position(swapped_in_canonical)
-    } else {
-        to_board_spawn(swapped_in_canonical)
-    };
+    // The incoming hold piece should reuse the outgoing active piece's board
+    // anchor instead of jumping back to the normal spawn row.
+    let candidate_piece = to_active_anchor(swapped_in_canonical);
+    crate::board::trace_event(format!(
+        "swap_hold: candidate swapped-in piece before kicks {:?}",
+        candidate_piece
+    ));
 
     let Some(new_active_piece) = resolve_swap(candidate_piece, &mut obstacles) else {
         // Abort the hold if even the kicked-up placements are illegal.
+        crate::board::trace_event(
+            "swap_hold: aborted because all kicked placements still collided".to_string(),
+        );
         return;
     };
+    crate::board::trace_event(format!(
+        "swap_hold: resolved swapped-in piece {:?}",
+        new_active_piece
+    ));
 
     // At this point the swap is legal, so we can commit the world changes.
     commands.entity(active_entity).despawn();
@@ -190,19 +198,36 @@ pub fn swap_hold(
     if consume_next_piece {
         // Consume the same bag piece we previously previewed with `peek()`.
         let _ = state.bag.next_tetromino();
+        crate::board::trace_event("swap_hold: consumed next bag piece".to_string());
     }
 
-    // A swapped-in piece should behave like a fresh active piece.
-    // That means gravity starts a new interval and any old lockdown countdown
-    // from the previous active piece must be cleared.
-    state.gravity_timer = Timer::new(state.drop_interval(), TimerMode::Repeating);
+    // A swapped-in piece should behave like a fresh active piece with respect
+    // to locking, but we keep the ordinary gravity timer semantics so replay
+    // timing stays aligned with the provided recordings.
+    fresh_active.0 = true;
+    keyboard.clear_just_pressed(KeyCode::ArrowDown);
+    keyboard.clear_just_pressed(KeyCode::ArrowLeft);
+    keyboard.clear_just_pressed(KeyCode::ArrowRight);
+    keyboard.clear_just_pressed(KeyCode::ArrowUp);
+    keyboard.clear_just_pressed(KeyCode::Space);
     lockdown.reset();
+    crate::board::trace_event(format!(
+        "swap_hold: committed active={:?} hold={:?} {} {}",
+        new_active_piece,
+        new_hold_piece,
+        crate::board::lockdown_snapshot(&lockdown),
+        crate::board::gravity_snapshot(&state)
+    ));
 
     commands.spawn((new_active_piece, Active));
     commands.spawn((new_hold_piece, Hold));
 
     let mut next_piece = state.bag.peek();
     next_piece.shift(2, 2);
+    crate::board::trace_event(format!(
+        "swap_hold: refreshed next preview {:?}",
+        next_piece
+    ));
     commands.spawn((next_piece, Next));
 }
 
@@ -234,15 +259,14 @@ pub struct HoldPlugin;
 
 impl Plugin for HoldPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PendingHold>()
-            .add_systems(Startup, setup_hold_window.in_set(Game))
-            .add_systems(
-                FixedUpdate,
-                swap_hold.before(crate::board::gravity).in_set(Game),
-            )
+        app.add_systems(Startup, setup_hold_window.in_set(Game))
             .add_systems(
                 Update,
-                (queue_hold_input, redraw_side_board::<Hold>).in_set(Game),
+                (
+                    swap_hold.before(crate::board::handle_user_input),
+                    redraw_side_board::<Hold>,
+                )
+                    .in_set(Game),
             );
     }
 }

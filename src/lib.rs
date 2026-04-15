@@ -53,6 +53,7 @@ pub fn build_app(app: &mut App, cfg: config::GameConfig) {
     use data::Next;
     use ui::*;
     app.insert_resource(cfg.build_game_state())
+        .init_resource::<FreshActivePiece>()
         .add_systems(
             Startup,
             (setup_board, spawn_next_tetromino, setup_ui)
@@ -62,6 +63,7 @@ pub fn build_app(app: &mut App, cfg: config::GameConfig) {
         .add_systems(
             FixedUpdate,
             (
+                clear_fresh_active_piece,
                 gravity,
                 deactivate_if_stuck,
                 delete_full_lines,

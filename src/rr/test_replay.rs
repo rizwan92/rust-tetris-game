@@ -48,6 +48,13 @@ fn replay_input(
         .events
         .pop_front_if(|event| event.time <= time.elapsed())
     {
+        crate::board::trace_event(format!(
+            "replay_input: at {:?} applying event time={:?} press={:?} release={:?}",
+            time.elapsed(),
+            event.time,
+            event.just_pressed,
+            event.just_released
+        ));
         for key in &event.just_released {
             keyboard.release(*key);
         }
@@ -81,6 +88,12 @@ fn compare_states(
     mut commands: Commands,
 ) {
     let t_actual = time.elapsed();
+    crate::board::trace_event(format!(
+        "compare_states: at {:?} snapshots_remaining={} events_remaining={}",
+        t_actual,
+        recording.snapshots.len(),
+        recording.events.len()
+    ));
 
     if recording.snapshots.is_empty() {
         return;
@@ -140,6 +153,12 @@ Next state:
     // drop all the states we skipped.
     //
     // using split_off because truncate_front is not stable yet.
+    crate::board::trace_event(format!(
+        "compare_states: matched actual at {:?} by skipping {} snapshot(s), next_expected={:?}",
+        t_actual,
+        skipped,
+        recording.snapshots.get(skipped).map(|(time, _)| *time)
+    ));
     recording.snapshots = recording.snapshots.split_off(skipped);
 }
 
