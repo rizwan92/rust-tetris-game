@@ -452,15 +452,21 @@ pub fn gravity(
         ));
         *tetromino = candidate;
     } else {
-        // If automatic gravity fired while the piece was already blocked, do
-        // not let the wrapped repeating timer leak into the next spawned
-        // piece. This keeps long lockdown waits from giving the next piece an
-        // almost-finished gravity interval.
-        state.gravity_timer.reset();
-        trace_event(format!(
-            "gravity: blocked from moving {:?} to {:?}; reset gravity timer after blocked auto-drop",
-            *tetromino, candidate
-        ));
+        // Ordinary mode wants a fresh interval after a blocked automatic drop.
+        // Hard-drop recordings, however, expect that carry to survive so the
+        // next spawned piece can still inherit it.
+        if state.manual_drop_gravity == SOFT_DROP_GRAVITY {
+            state.gravity_timer.reset();
+            trace_event(format!(
+                "gravity: blocked from moving {:?} to {:?}; reset gravity timer after blocked ordinary auto-drop",
+                *tetromino, candidate
+            ));
+        } else {
+            trace_event(format!(
+                "gravity: blocked from moving {:?} to {:?}; preserved gravity timer in hard-drop mode",
+                *tetromino, candidate
+            ));
+        }
     }
 }
 
@@ -590,16 +596,23 @@ pub fn spawn_next_tetromino(
         return;
     }
 
-    // Ordinary gravity mode should start a fresh interval on spawn instead of
-    // inheriting nearly-finished carry from the previous piece.
+    // Preserve most of the repeating gravity carry across piece transitions.
     //
-    // The hard-drop recordings are different: when hard drop is enabled they
-    // intentionally preserve the quicker carry behavior between pieces, so we
-    // only reset the timer in the normal one-row manual drop mode.
-    if state.manual_drop_gravity == SOFT_DROP_GRAVITY {
+    // The replay recordings want the next piece to inherit ordinary partial
+    // carry from the previous piece, but not when the timer is only a frame or
+    // two away from firing.
+    // Example:
+    // if the timer is already 0.64s into a 0.80s interval, keep that carry so
+    // the new piece drops after about 0.16s.
+    //
+    // But if the timer is only 1-2 fixed frames away from firing, reset it so
+    // the new piece does not fall immediately after spawning.
+    if state.gravity_timer.remaining()
+        <= crate::rr::FIXED_FRAME_DURATION + crate::rr::FIXED_FRAME_DURATION
+    {
         state.gravity_timer.reset();
         trace_event(format!(
-            "spawn_next_tetromino: reset gravity timer for ordinary spawn {}",
+            "spawn_next_tetromino: reset gravity timer on near-finished spawn {}",
             gravity_snapshot(&state)
         ));
     }
