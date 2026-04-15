@@ -2,14 +2,17 @@ name: Rust
 
 on:
   push:
-    branches: ["main", "starter-reset"]
+    branches: ["**"]
   pull_request:
-    branches: ["main"]
+    branches: ["main", "starter-reset"]
   workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
   WGPU_BACKEND: vulkan
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  CARGO_INCREMENTAL: 0
 
 jobs:
   build:
@@ -42,6 +45,9 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          shared-key: linux-ci-shared
 
       - name: Configure software Vulkan
         run: |
