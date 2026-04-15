@@ -146,6 +146,11 @@ fn compare_states(
         actual
     };
 
+    let actual_active = actual
+        .active
+        .map(|tetromino| format!("{:?} @ {:?}", tetromino.center(), tetromino.cells()))
+        .unwrap_or_else(|| "none".to_string());
+
     // do a linear scan until we match a state
     let Some((skipped, _)) = recording.snapshots.iter().enumerate().take(MAX_STATE_LOOKAHEAD).find(|(i, (t_expected, expected))| {
         if actual == *expected {
@@ -160,6 +165,23 @@ fn compare_states(
         }
     }) else {
         if let Some((_, expected))= recording.snapshots.front() {
+        let expected_active = expected
+            .active
+            .map(|tetromino| format!("{:?} @ {:?}", tetromino.center(), tetromino.cells()))
+            .unwrap_or_else(|| "none".to_string());
+        let next_active = recording
+            .snapshots
+            .get(1)
+            .and_then(|(_, snapshot)| snapshot.active)
+            .map(|tetromino| format!("{:?} @ {:?}", tetromino.center(), tetromino.cells()))
+            .unwrap_or_else(|| "none".to_string());
+        crate::board::trace_event(format!(
+            "compare_states: diverged at {:?} actual_active={} expected_active={} next_active={}",
+            t_actual,
+            actual_active,
+            expected_active,
+            next_active,
+        ));
         warn!(r#"The states diverge at time {t_actual:?} and fast-forward is not possible.
 Actual state:
 {actual:?}

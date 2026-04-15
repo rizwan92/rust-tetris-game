@@ -387,6 +387,7 @@ pub fn handle_user_input(
 pub fn gravity(
     time: Res<Time<Fixed>>,
     mut state: ResMut<GameState>,
+    lockdown: Res<LockdownTimer>,
     mut tetrominoes: Query<&mut Tetromino, With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
@@ -397,11 +398,12 @@ pub fn gravity(
         .map(|tetromino| format!("{:?}", *tetromino))
         .unwrap_or_else(|| "none".to_string());
     trace_event(format!(
-        "gravity: before tick delta={:.3}s active={} obstacles={} {}",
+        "gravity: before tick delta={:.3}s active={} obstacles={} {} {}",
         time.delta_secs(),
         active_before,
         obstacle_count,
-        gravity_snapshot(&state)
+        gravity_snapshot(&state),
+        lockdown_snapshot(&lockdown),
     ));
 
     // Advance the repeating gravity timer every fixed frame.
@@ -409,9 +411,10 @@ pub fn gravity(
     // If the timer has not fired yet, do nothing this frame.
     if !state.gravity_timer.just_finished() {
         trace_event(format!(
-            "gravity: timer not ready after tick remaining={:.3}s {}",
+            "gravity: timer not ready after tick remaining={:.3}s {} {}",
             state.gravity_timer.remaining().as_secs_f32(),
-            gravity_snapshot(&state)
+            gravity_snapshot(&state),
+            lockdown_snapshot(&lockdown),
         ));
         return;
     }
@@ -419,8 +422,9 @@ pub fn gravity(
     // No active piece means there is nothing to drop.
     let Ok(mut tetromino) = tetrominoes.single_mut() else {
         trace_event(format!(
-            "gravity: timer fired but there was no active piece {}",
-            gravity_snapshot(&state)
+            "gravity: timer fired but there was no active piece {} {}",
+            gravity_snapshot(&state),
+            lockdown_snapshot(&lockdown),
         ));
         return;
     };
@@ -431,11 +435,12 @@ pub fn gravity(
     // Only accept the move when there is no collision.
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
         trace_event(format!(
-            "gravity: timer fired and moved active from {:?} to {:?}; remaining={:.3}s {}",
+            "gravity: timer fired and moved active from {:?} to {:?}; remaining={:.3}s {} {}",
             *tetromino,
             candidate,
             state.gravity_timer.remaining().as_secs_f32(),
-            gravity_snapshot(&state)
+            gravity_snapshot(&state),
+            lockdown_snapshot(&lockdown),
         ));
         *tetromino = candidate;
     } else {
@@ -445,19 +450,21 @@ pub fn gravity(
         if state.manual_drop_gravity == SOFT_DROP_GRAVITY {
             state.gravity_timer.reset();
             trace_event(format!(
-                "gravity: blocked from moving {:?} to {:?}; reset gravity timer after blocked ordinary auto-drop, obstacles={} {}",
+                "gravity: blocked from moving {:?} to {:?}; reset gravity timer after blocked ordinary auto-drop, obstacles={} {} {}",
                 *tetromino,
                 candidate,
                 obstacle_count,
-                gravity_snapshot(&state)
+                gravity_snapshot(&state),
+                lockdown_snapshot(&lockdown),
             ));
         } else {
             trace_event(format!(
-                "gravity: blocked from moving {:?} to {:?}; preserved gravity timer in hard-drop mode, obstacles={} {}",
+                "gravity: blocked from moving {:?} to {:?}; preserved gravity timer in hard-drop mode, obstacles={} {} {}",
                 *tetromino,
                 candidate,
                 obstacle_count,
-                gravity_snapshot(&state)
+                gravity_snapshot(&state),
+                lockdown_snapshot(&lockdown),
             ));
         }
     }
