@@ -9,7 +9,6 @@ on:
 env:
   CARGO_TERM_COLOR: always
   WGPU_BACKEND: vulkan
-  VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
 
 jobs:
   build:
@@ -42,6 +41,22 @@ jobs:
 
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@v2
+
+      - name: Configure software Vulkan
+        run: |
+          echo "Available Vulkan ICD files:"
+          ls -la /usr/share/vulkan/icd.d
+
+          ICD_FILE="$(find /usr/share/vulkan/icd.d -maxdepth 1 -type f \( -name '*lvp*.json' -o -name '*lavapipe*.json' \) | head -n 1)"
+
+          if [ -z "$ICD_FILE" ]; then
+            echo "Could not find a lavapipe Vulkan ICD file." >&2
+            exit 1
+          fi
+
+          echo "Using Vulkan ICD: $ICD_FILE"
+          echo "VK_ICD_FILENAMES=$ICD_FILE" >> "$GITHUB_ENV"
+          echo "VK_DRIVER_FILES=$ICD_FILE" >> "$GITHUB_ENV"
 
       - name: Run fmt check
         run: cargo fmt --check
