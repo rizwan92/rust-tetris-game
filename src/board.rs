@@ -588,6 +588,16 @@ pub fn spawn_next_tetromino(
     // Spawn the active gameplay piece.
     //
     fresh_active.0 = true;
+    // A freshly spawned bag piece should start a new gravity interval.
+    //
+    // Why reset here?
+    // - Linux replay traces showed new active pieces inheriting a nearly
+    //   finished timer from the previous piece's lifecycle.
+    // - That made the new piece fall one row too early in replay-based tests
+    //   like score/hard-drop.
+    // - Hold swaps are handled in `hold.rs`, so we keep that path separate and
+    //   only reset the timer for bag-driven spawns here.
+    state.gravity_timer.reset();
     keyboard.clear_just_pressed(KeyCode::ArrowDown);
     keyboard.clear_just_pressed(KeyCode::ArrowLeft);
     keyboard.clear_just_pressed(KeyCode::ArrowRight);
