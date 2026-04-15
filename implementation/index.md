@@ -19,6 +19,7 @@ Current feature notes:
 4. [Score](./04-score.md)
 5. [RNG](./05-rng.md)
 6. [Hard Drop](./06-hard-drop.md)
+7. [Hold](./07-hold.md)
 
 Local testing rule:
 
