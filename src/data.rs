@@ -12,8 +12,20 @@ use crate::bag::Bag;
 pub struct Cell(pub i32, pub i32);
 impl Cell {
     #[allow(unused)] // remove after you use this function
-    fn rotate_90_deg_cw(&self, _x: f32, _y: f32) -> Cell {
-        todo!("copy from earlier assignments")
+    fn rotate_90_deg_cw(&self, x: f32, y: f32) -> Cell {
+        // Move the cell into "rotation-center-relative" coordinates.
+        // Example:
+        // if the cell is at (3, 4) and the center is (0, 0),
+        // then dx = 3 and dy = 4.
+        let dx = self.0 as f32 - x;
+        // Use the same idea for the y direction.
+        // Continuing the same example, dy = 4.
+        let dy = self.1 as f32 - y;
+        // A clockwise 90-degree rotation changes (dx, dy) into (dy, -dx).
+        // Example:
+        // (3, 4) becomes (4, -3).
+        // Then we shift back by the original center and round to integer cells.
+        Cell((x + dy).round() as i32, (y - dx).round() as i32)
     }
 
     /// Check whether this cell is in bounds.
@@ -85,7 +97,11 @@ impl Tetromino {
 
     /// Is the tetromino in bounds?
     pub fn in_bounds(&self) -> bool {
-        todo!("copy from earlier")
+        // The tetromino is legal only when every one of its four cells is legal.
+        // Example:
+        // if three cells are inside the board but one is at x = -1,
+        // then the whole tetromino is out of bounds.
+        self.cells.iter().all(Cell::in_bounds)
     }
 
     /// Is this the O tetromino?
@@ -104,16 +120,30 @@ impl Tetromino {
 
     /// Rotate this tetromino 90 degrees clockwise.
     pub fn rotate(&mut self) {
+        // The O piece keeps the same visible shape after rotation,
+        // so the baseline tests expect it to remain unchanged.
         if self.is_o() {
             return;
         }
 
-        todo!("rotate everything 90 degrees around the center.")
+        // Read the rotation center once so every cell uses the same pivot.
+        // Example:
+        // the T piece on the board might rotate around (4.0, 18.0).
+        let (x, y) = self.center;
+        // Rotate each of the four cells around that center.
+        // We build a new array instead of mutating one cell at a time.
+        self.cells = self.cells.map(|cell| cell.rotate_90_deg_cw(x, y));
     }
 
     /// Shift all the cells in the tetromino by the given amount
-    pub fn shift(&mut self, _dx: i32, _dy: i32) {
-        todo!("copy from earlier")
+    pub fn shift(&mut self, dx: i32, dy: i32) {
+        // Move every cell by the same offset.
+        // Example:
+        // shifting by (2, -1) turns Cell(3, 5) into Cell(5, 4).
+        self.cells = self.cells.map(|Cell(x, y)| Cell(x + dx, y + dy));
+        // The rotation center must move by the same amount or later rotations
+        // would happen around the wrong point.
+        self.center = (self.center.0 + dx as f32, self.center.1 + dy as f32);
     }
 }
 
@@ -182,7 +212,14 @@ impl GameState {
 
     /// Auto-drop interval (i.e., gravity)
     pub fn drop_interval(&self) -> Duration {
-        todo!("this calculation can use floats directly unlike the one below")
+        // Clamp the level so we never index past the gravity table.
+        // Example:
+        // if level somehow becomes 99, we still use the last valid interval.
+        let level = usize::min(self.level as usize, Self::MAX_LEVEL - 1);
+        // Convert "frames per drop" into seconds using the game framerate.
+        // Example:
+        // level 0 uses 48 frames, so the duration is 48 / 60 seconds.
+        Duration::from_secs_f32(Self::INTERVALS[level] / Self::FRAMERATE)
     }
 
     /// The drop interval in the beginning of the game.
