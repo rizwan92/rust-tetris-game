@@ -358,6 +358,7 @@ pub fn spawn_next_tetromino(
     mut state: ResMut<GameState>,
     active_tetrominoes: Query<Entity, With<Active>>,
     next_tetrominoes: Query<Entity, With<Next>>,
+    obstacles: Query<&Block, With<Obstacle>>,
 ) {
     // Only spawn when there is no active tetromino on the board.
     if !active_tetrominoes.is_empty() {
@@ -380,6 +381,17 @@ pub fn spawn_next_tetromino(
     } else {
         active.shift(4, 18);
     }
+
+    // Collision-enabled gameplay must also check whether the new spawn position
+    // is already occupied.
+    // Example:
+    // if the stack has reached the top and the new piece overlaps it
+    // immediately, the game is over and we should not spawn an illegal piece.
+    if crate::there_is_collision(&active, obstacles) {
+        commands.trigger(GameOver);
+        return;
+    }
+
     // Spawn the active gameplay piece.
     commands.spawn((active, Active));
 
