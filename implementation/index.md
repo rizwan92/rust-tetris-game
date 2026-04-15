@@ -17,6 +17,7 @@ Current feature notes:
 2. [Config](./02-config.md)
 3. [Collision](./03-collision.md)
 4. [Score](./04-score.md)
+5. [RNG](./05-rng.md)
 
 Local testing rule:
 
