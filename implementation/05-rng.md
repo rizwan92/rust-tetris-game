@@ -2,50 +2,22 @@
 
 ## Goal
 
-Implement the `rng` feature by filling only the starter skeleton in:
+Finish the random bag feature in:
 
-- `Cargo.toml`
 - `src/bag.rs`
 
-This feature adds the random 7-bag behavior used by the later replay and hard
-drop tests.
+This guide assumes config is already done.
 
-## Step 1: Enable the feature in `Cargo.toml`
+## 1. Replace `RandomBag::from_seed`
 
-Find this line in [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml):
-
-```toml
-enabled_features = ["config", "collision", "score"]
-```
-
-Replace it with:
-
-```toml
-enabled_features = ["config", "collision", "score", "rng"]
-```
-
-Why:
-
-- the random bag implementation is behind the `rng` feature flag
-- this also enables the extra config variants `FixedSeed` and `RandomSeed`
-
-## Step 2: Replace `RandomBag::from_seed`
-
-Find this starter code in [src/bag.rs](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/src/bag.rs):
+Paste this function:
 
 ```rust
-pub fn from_seed(_seed: u64) -> Self {
-    todo!("Create an empty bag, seed the RNG from the given value.")
-}
-```
-
-Replace it with:
-
-```rust
+/// Create a bag from given starting RNG seed.
 pub fn from_seed(seed: u64) -> Self {
     // Start with an empty bag and a deterministic RNG state.
     // Example:
-    // seed 727 must always give the same sequence during tests.
+    // using seed 727 should always produce the same sequence of pieces.
     Self {
         remaining_pieces: vec![],
         rng: SmallRng::seed_from_u64(seed),
@@ -53,147 +25,68 @@ pub fn from_seed(seed: u64) -> Self {
 }
 ```
 
-Why:
+## 2. Replace `refill`
 
-- the bag should start empty
-- the RNG must be deterministic for fixed-seed tests
-
-## Step 3: Replace `refill`
-
-Find this starter code in [src/bag.rs](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/src/bag.rs):
+Paste this function:
 
 ```rust
+// Refill the bag if it is empty.  This should create one of each
+// tetromino, shuffle them, and put them in the bag.
 fn refill(&mut self) {
     debug_assert!(self.remaining_pieces.is_empty());
-    todo!()
-}
-```
-
-Replace it with:
-
-```rust
-fn refill(&mut self) {
-    debug_assert!(self.remaining_pieces.is_empty());
-
     // Build one of each canonical tetromino.
     // Example:
-    // before shuffling, this is S, Z, L, J, T, O, I.
+    // before shuffling, this contains S, Z, L, J, T, O, I in that order.
     self.remaining_pieces = ALL_TETROMINO_TYPES.map(get_tetromino).to_vec();
 
-    // Shuffle the 7-piece bag in place with the bag's RNG state.
+    // Shuffle the vector in place using the bag's RNG state.
+    // The tests depend on this exact style of shuffling, so we do not
+    // invent any custom randomization logic here.
     self.remaining_pieces.shuffle(&mut self.rng);
 }
 ```
 
-Important note:
+## 3. Replace the `Bag for RandomBag` impl
 
-- use the library shuffle directly
-- do not invent custom swap logic
-- the tests expect the exact order produced by this style
-
-## Step 4: Replace `next_tetromino`
-
-Find:
+Paste this block:
 
 ```rust
-fn next_tetromino(&mut self) -> Tetromino {
-    todo!("Get the next tetromino from the bag.  Refill it if necessary")
-}
-```
+impl Bag for RandomBag {
+    fn next_tetromino(&mut self) -> Tetromino {
+        // The bag refills itself lazily the first time it is queried.
+        // Example:
+        // if the bag is empty and we ask for the next piece, create a new
+        // shuffled 7-piece bag first.
+        if self.remaining_pieces.is_empty() {
+            self.refill();
+        }
 
-Replace it with:
-
-```rust
-fn next_tetromino(&mut self) -> Tetromino {
-    // Refill lazily if the bag is empty.
-    if self.remaining_pieces.is_empty() {
-        self.refill();
+        // Remove the next piece from the same end that `peek()` reads from.
+        // Using the back of the vector keeps both operations simple.
+        self.remaining_pieces
+            .pop()
+            .expect("bag should contain a tetromino after refill")
     }
 
-    // Remove the next piece from the back of the vector.
-    // This choice matters because `peek()` must use the same end.
-    self.remaining_pieces
-        .pop()
-        .expect("bag should contain a tetromino after refill")
-}
-```
+    fn peek(&mut self) -> Tetromino {
+        // `peek()` must agree with `next_tetromino()`.
+        // That means it also looks at the back of the vector.
+        if self.remaining_pieces.is_empty() {
+            self.refill();
+        }
 
-## Step 5: Replace `peek`
-
-Find:
-
-```rust
-fn peek(&mut self) -> Tetromino {
-    todo!()
-}
-```
-
-Replace it with:
-
-```rust
-fn peek(&mut self) -> Tetromino {
-    // Refill lazily if needed, just like `next_tetromino()`.
-    if self.remaining_pieces.is_empty() {
-        self.refill();
+        *self
+            .remaining_pieces
+            .last()
+            .expect("bag should contain a tetromino after refill")
     }
-
-    // Read from the same end that `next_tetromino()` removes from.
-    // That is what makes the tests say "peek and next must agree."
-    *self
-        .remaining_pieces
-        .last()
-        .expect("bag should contain a tetromino after refill")
 }
 ```
 
-## Why the “same end of the vector” rule matters
-
-Suppose the shuffled vector is:
-
-```text
-[S, Z, L, J, T, O, I]
-```
-
-If:
-
-- `peek()` looks at the front
-- but `next_tetromino()` removes from the back
-
-then:
-
-- `peek()` says the next piece is `S`
-- `next_tetromino()` returns `I`
-
-and the tests fail immediately.
-
-So both functions must use the same end.
-
-## Local checks
-
-Run:
-
-```bash
-cargo fmt --all
-```
-
-Run:
-
-```bash
-cargo test --features test config::tests -- --nocapture
-```
+## 4. Local checks
 
 Run:
 
 ```bash
 cargo nextest run --features test --retries 0 --test-threads=1 --test end_to_end random_bag_impl1 random_bag_impl2 random_bag_impl3 --no-fail-fast
 ```
-
-These RNG tests are deterministic, so they are good signal even before Linux CI.
-
-## Summary
-
-This feature should end with:
-
-- deterministic fixed-seed random bags
-- shuffled 7-piece refill behavior
-- `peek()` and `next_tetromino()` agreeing with each other

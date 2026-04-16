@@ -2,81 +2,46 @@
 
 ## Goal
 
-Implement the `hard_drop` feature by filling only the starter skeleton in:
+Finish the hard-drop feature in:
 
-- `Cargo.toml`
 - `src/hard_drop.rs`
 
-This feature does not rewrite the board logic.
+This guide assumes collision is already done.
 
-Instead, it adds a small toggle that changes how the existing down-arrow logic
-behaves:
+## 1. Replace `toggle_hard_drop`
 
-- hard drop off: manual gravity is `1`
-- hard drop on: manual gravity is `20`
-
-Because baseline already made down-arrow use `manual_drop_gravity`, this feature
-stays nicely modular.
-
-## Step 1: Enable the feature in `Cargo.toml`
-
-Find this line in [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml):
-
-```toml
-enabled_features = ["config", "collision", "score", "rng"]
-```
-
-Replace it with:
-
-```toml
-enabled_features = ["config", "collision", "score", "rng", "hard_drop"]
-```
-
-Why:
-
-- the plugin in `src/hard_drop.rs` only exists when the `hard_drop` feature is
-  enabled
-
-## Step 2: Keep the status text setup, but add a doc comment
-
-The starter `setup_status_text` code is already basically correct.
-
-You only need to keep it and let the later systems update the text value.
-
-## Step 3: Add `toggle_hard_drop`
-
-In [src/hard_drop.rs](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/src/hard_drop.rs), replace the big TODO comment block by adding this system:
+Paste this function:
 
 ```rust
-fn toggle_hard_drop(
-    keyboard: Res<ButtonInput<KeyCode>>,
-    mut hard_drop: Single<&mut HardDrop>,
-) {
-    // The replay recordings show that hard drop flips on key press.
+/// Flip the hard-drop flag when the player presses Z.
+fn toggle_hard_drop(keyboard: Res<ButtonInput<KeyCode>>, mut hard_drop: Single<&mut HardDrop>) {
+    // The replay recordings show that hard drop flips on key press, not key
+    // release.
     // Example:
-    // pressing Z once changes false -> true.
+    // pressing Z once changes `false` -> `true`.
     if keyboard.just_pressed(KeyCode::KeyZ) {
         hard_drop.0 = !hard_drop.0;
     }
 }
 ```
 
-Why this is correct:
+## 2. Replace `update_drop_gravity`
 
-- the recorded tests use `KeyZ`
-- the state changes on press, not on release
-- there is only one hard-drop status entity, so `Single` is the right choice
-
-## Step 4: Add `update_drop_gravity`
-
-Add this system below it:
+Paste this function:
 
 ```rust
+/// Update the manual drop amount whenever the hard-drop flag changes.
 fn update_drop_gravity(
     hard_drop: Query<&HardDrop, Changed<HardDrop>>,
     mut state: ResMut<GameState>,
 ) {
+    // Only do work when the flag actually changed.
     for hard_drop in &hard_drop {
+        // Hard drop means the down input should behave like "drop one row"
+        // many times in the same frame.
+        // Example:
+        // Off -> manual gravity 1
+        // On  -> manual gravity 20
         state.manual_drop_gravity = if hard_drop.0 {
             HARD_DROP_GRAVITY
         } else {
@@ -86,20 +51,18 @@ fn update_drop_gravity(
 }
 ```
 
-Why this works:
+## 3. Replace `update_status_text`
 
-- when the flag becomes `true`, down-arrow now behaves like 20 repeated drops
-- when the flag becomes `false`, it goes back to the normal one-row behavior
-- `Changed<HardDrop>` means we only update the state when the toggle actually
-  changes
-
-## Step 5: Add `update_status_text`
-
-Add this system:
+Paste this function:
 
 ```rust
+/// Rewrite the status text whenever the hard-drop flag changes.
 fn update_status_text(mut text: Query<(&HardDrop, &mut Text), Changed<HardDrop>>) {
+    // Again, `Changed<HardDrop>` keeps this system cheap.
     for (hard_drop, mut text) in &mut text {
+        // Show a short human-readable status string in the UI.
+        // Example:
+        // if hard drop is enabled, the text becomes "Hard Drop: On".
         text.0 = if hard_drop.0 {
             "Hard Drop: On".to_string()
         } else {
@@ -109,71 +72,32 @@ fn update_status_text(mut text: Query<(&HardDrop, &mut Text), Changed<HardDrop>>
 }
 ```
 
-Why:
+## 4. Replace the plugin
 
-- the `HardDrop` component and the `Text` live on the same UI entity
-- the text should update only when the toggle changes
-
-## Step 6: Finish the plugin
-
-Find this starter code in [src/hard_drop.rs](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/src/hard_drop.rs):
+Make sure the plugin looks like this:
 
 ```rust
-impl Plugin for HardDropPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup_status_text);
-        todo!("add your systems here.  They should go in Update, and in the Game system set.")
-    }
-}
-```
+/// Plugin that adds hard-drop toggle behavior and the status text.
+pub struct HardDropPlugin;
 
-Replace it with:
-
-```rust
 impl Plugin for HardDropPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(Startup, setup_status_text.in_set(Game))
             .add_systems(
                 Update,
-                (toggle_hard_drop, update_drop_gravity, update_status_text).in_set(Game),
+                (toggle_hard_drop, update_drop_gravity, update_status_text)
+                    .chain()
+                    .before(crate::board::handle_user_input)
+                    .in_set(Game),
             );
     }
 }
 ```
 
-Why:
-
-- the starter spec says these systems belong in `Update`
-- they should also be in the shared `Game` set
-- this keeps test injection ordering consistent with the rest of the app
-
-## Local checks
+## 5. Local checks
 
 Run:
 
 ```bash
-cargo fmt --all
+cargo nextest run --features test --retries 0 --test-threads=1 --test end_to_end hard_drop_67 hard_drop_727 hard_drop_deterministic hard_drop_deterministic2 hard_drop_hold_0 --no-fail-fast
 ```
-
-Run:
-
-```bash
-cargo clippy --features test -- -D warnings
-```
-
-Run:
-
-```bash
-cargo nextest run --features test --retries 0 --test-threads=1 --test end_to_end hard_drop_deterministic hard_drop_deterministic2 hard_drop_67 hard_drop_727 --no-fail-fast
-```
-
-Because the hard-drop tests are replay-based, they are better local signal than
-the sleep-based realtime tests.
-
-## Summary
-
-This feature should end with:
-
-- Z toggling hard drop on and off
-- the UI showing `Hard Drop: On` or `Hard Drop: Off`
-- `manual_drop_gravity` switching between `1` and `20`

@@ -2,177 +2,179 @@
 
 ## Goal
 
-Implement the `hold` feature by filling only the starter skeleton in:
+Finish the hold feature in:
 
-- `Cargo.toml`
 - `src/hold.rs`
 
-This feature is a little more complex than RNG or hard drop because the actual
-swap happens in `FixedUpdate`, but the `X` key press arrives in the ordinary
-`Update` input flow.
+This guide assumes baseline, collision, and hard drop are already done.
 
-So the clean minimal solution is:
+## 1. Add the helper functions near the top of `src/hold.rs`
 
-1. queue the hold request in `Update`
-2. consume that queued request in `FixedUpdate`
-3. redraw the hold preview in `Update`
-
-## Step 1: Enable the feature in `Cargo.toml`
-
-Find this line in [Cargo.toml](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/Cargo.toml):
-
-```toml
-enabled_features = ["config", "collision", "score", "rng", "hard_drop"]
-```
-
-Replace it with:
-
-```toml
-enabled_features = ["config", "collision", "score", "rng", "hard_drop", "hold"]
-```
-
-## Step 2: Add a tiny pending-hold resource
-
-Near the top of [src/hold.rs](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/src/hold.rs), add:
+Paste this block right below `pub struct Hold;`
 
 ```rust
-/// A queued request to perform one hold swap on the next fixed frame.
-#[derive(Resource, Default)]
-pub struct PendingHold(bool);
-```
+/// NEW IMPLEMENTATION: Recover the canonical spawn tetromino that matches a
+/// gameplay color.
+///
+/// Simple example:
+/// if the current piece is blue, this helper returns the normal blue `T`
+/// tetromino shape.
+fn canonical_from_color(color: Color) -> Tetromino {
+    ALL_TETROMINO_TYPES
+        .into_iter()
+        .map(get_tetromino)
+        .find(|tetromino| tetromino.color == color)
+        .expect("every gameplay tetromino color should map to a canonical piece")
+}
 
-Why this is needed:
+/// NEW IMPLEMENTATION: Place a tetromino into the 5x5 hold preview window.
+///
+/// Simple example:
+/// if the player holds a long `I` piece, this helper moves it into the middle
+/// of the hold box so it looks centered.
+fn move_to_hold_window(mut tetromino: Tetromino) -> Tetromino {
+    let canonical = canonical_from_color(tetromino.color);
+    // NEW IMPLEMENTATION: the `I` piece has a different center, so it needs a
+    // slightly different preview center to look correct.
+    let preview_center = if canonical.center == (0.5, -0.5) {
+        (2.5, 2.5)
+    } else {
+        (canonical.center.0 + 2.0, canonical.center.1 + 2.0)
+    };
 
-- `swap_hold` runs in `FixedUpdate`
-- key presses are observed naturally in `Update`
-- the resource bridges those two schedules without adding big architecture
+    // NEW IMPLEMENTATION: turn the preview center difference into a simple grid
+    // shift.
+    let dx = (preview_center.0 - tetromino.center().0).round() as i32;
+    let dy = (preview_center.1 - tetromino.center().1).round() as i32;
+    tetromino.shift(dx, dy);
+    tetromino
+}
 
-## Step 3: Add `queue_hold_input`
-
-Add this system above `swap_hold`:
-
-```rust
-fn queue_hold_input(keyboard: Res<ButtonInput<KeyCode>>, mut pending: ResMut<PendingHold>) {
-    // The hold feature uses X.
-    if keyboard.just_pressed(KeyCode::KeyX) {
-        pending.0 = true;
+/// NEW IMPLEMENTATION: Place a tetromino at its normal spawn row on the main
+/// board.
+///
+/// Simple example:
+/// when a held piece comes back to the board, it should start where a normal
+/// newly spawned piece would start.
+fn move_to_board_spawn(mut tetromino: Tetromino) -> Tetromino {
+    if tetromino.center == (0.5, -0.5) {
+        tetromino.shift(4, 19);
+    } else {
+        tetromino.shift(4, 18);
     }
+    tetromino
+}
+
+/// NEW IMPLEMENTATION: Reuse the outgoing active piece offset when a hold swap
+/// spawns a new piece.
+///
+/// Simple example:
+/// if the current piece already moved one column left, the piece coming out of
+/// hold should appear one column left too.
+fn move_to_active_anchor(active_piece: Tetromino, mut tetromino: Tetromino) -> Tetromino {
+    let active_spawn = move_to_board_spawn(canonical_from_color(active_piece.color));
+    // NEW IMPLEMENTATION: measure how far the current active piece moved away
+    // from its normal spawn point.
+    let dx = (active_piece.center().0 - active_spawn.center().0).round() as i32;
+    let dy = (active_piece.center().1 - active_spawn.center().1).round() as i32;
+
+    let incoming_spawn = move_to_board_spawn(canonical_from_color(tetromino.color));
+    // NEW IMPLEMENTATION: first move the incoming piece to its own normal spawn
+    // point.
+    let center_dx = (incoming_spawn.center().0 - tetromino.center().0).round() as i32;
+    let center_dy = (incoming_spawn.center().1 - tetromino.center().1).round() as i32;
+    tetromino.shift(center_dx, center_dy);
+    // NEW IMPLEMENTATION: then copy the old active piece offset.
+    tetromino.shift(dx, dy);
+    tetromino
+}
+
+/// NEW IMPLEMENTATION: Try the swapped-in hold piece at its spawn row, kicking
+/// it up if needed.
+///
+/// Simple example:
+/// if the held piece overlaps the stack by one row, we try the same piece one
+/// row higher, then two rows higher, and so on.
+fn resolve_hold_swap(
+    mut tetromino: Tetromino,
+    obstacles: &mut Query<&Block, With<Obstacle>>,
+) -> Option<Tetromino> {
+    for attempt in 0..=4 {
+        // NEW IMPLEMENTATION: stop at the first legal position.
+        if !crate::there_is_collision(&tetromino, obstacles.reborrow()) {
+            return Some(tetromino);
+        }
+
+        if attempt < 4 {
+            // NEW IMPLEMENTATION: kick the piece up by one row and try again.
+            tetromino.shift(0, 1);
+        }
+    }
+
+    None
 }
 ```
 
-Why:
+## 2. Replace `swap_hold`
 
-- the request is remembered until `swap_hold` consumes it
-- one boolean is enough because one press should cause one swap
-
-## Step 4: Replace `swap_hold`
-
-Find this starter code in [src/hold.rs](/Users/rizwan/Desktop/rizwan/projects/milestone-1-Varun1421-main/src/hold.rs):
+Paste this function:
 
 ```rust
-pub fn swap_hold() {}
-```
-
-Replace it with:
-
-```rust
+/// NEW IMPLEMENTATION: Swap the current piece and the piece in the hold window
+/// on user input.
+///
+/// If no piece is held, then take the next piece as the active piece and move
+/// the current piece to the hold window.
+///
+/// This system also has to make sure that the swap is legal and kick the piece
+/// up by up to 4 times until the swap is legal.  If that is not possible, then
+/// abort the swap.
+///
+/// Simple example:
+/// press `X` once:
+/// - current active piece goes into the hold box
+/// - held piece, or the next preview piece, becomes the new active piece
+#[allow(clippy::too_many_arguments)]
 pub fn swap_hold(
     mut commands: Commands,
-    mut pending: ResMut<PendingHold>,
+    mut keyboard: ResMut<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
+    mut lockdown: ResMut<LockdownTimer>,
     active_tetrominoes: Query<(Entity, &Tetromino), With<Active>>,
     held_tetrominoes: Query<(Entity, &Tetromino), With<Hold>>,
-    next_tetrominoes: Query<Entity, With<Next>>,
+    next_tetrominoes: Query<Entity, (With<Next>, With<Tetromino>)>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
-    if !pending.0 {
+    // NEW IMPLEMENTATION: keep the Bevy system small by letting helper
+    // functions do the placement math.
+    if !keyboard.just_pressed(KeyCode::KeyX) {
         return;
     }
-
-    pending.0 = false;
+    keyboard.clear_just_pressed(KeyCode::KeyX);
 
     let Ok((active_entity, active_piece)) = active_tetrominoes.single() else {
         return;
     };
 
-    // Recover the canonical tetromino by color.
-    // This works because each tetromino type has a unique color.
-    let canonical_from_color = |color: Color| {
-        ALL_TETROMINO_TYPES
-            .into_iter()
-            .map(get_tetromino)
-            .find(|tetromino| tetromino.color == color)
-            .expect("every gameplay tetromino color should map to a canonical piece")
-    };
+    // NEW IMPLEMENTATION: the old active piece always becomes the new hold
+    // preview.
+    let new_hold_piece = move_to_hold_window(*active_piece);
 
-    // Move a canonical tetromino into the hold preview window.
-    let to_hold_window = |mut tetromino: Tetromino| {
-        if tetromino.center == (0.5, -0.5) {
-            tetromino.shift(2, 3);
-        } else {
-            tetromino.shift(2, 2);
-        }
-        tetromino
-    };
+    let held_piece = held_tetrominoes.iter().next();
 
-    // Move a canonical tetromino into the normal board spawn position.
-    let to_board_spawn = |mut tetromino: Tetromino| {
-        if tetromino.center == (0.5, -0.5) {
-            tetromino.shift(4, 19);
-        } else {
-            tetromino.shift(4, 18);
-        }
-        tetromino
-    };
-
-    // Move a canonical tetromino onto the board using the current active
-    // piece's rounded center as the anchor.
-    let to_board_position = |mut tetromino: Tetromino| {
-        let dx = active_piece.center.0.round() as i32;
-        let dy = active_piece.center.1.round() as i32;
-        tetromino.shift(dx, dy);
-        tetromino
-    };
-
-    // Resolve collision by moving the swapped-in piece up by at most 4 rows.
-    let resolve_swap = |mut tetromino: Tetromino, obstacles: &mut Query<&Block, With<Obstacle>>| {
-        for attempt in 0..=4 {
-            if !crate::there_is_collision(&tetromino, obstacles.reborrow()) {
-                return Some(tetromino);
-            }
-
-            if attempt < 4 {
-                tetromino.shift(0, 1);
-            }
-        }
-
-        None
-    };
-
-    let new_hold_piece = to_hold_window(canonical_from_color(active_piece.color));
-
-    let held_piece = held_tetrominoes.iter().next().map(|(entity, tetromino)| {
-        (entity, canonical_from_color(tetromino.color))
-    });
-
-    // If no piece is held yet, we preview the bag piece first and only consume
-    // it after legality is confirmed.
+    // NEW IMPLEMENTATION: if hold is empty, we have to take the preview piece
+    // from the bag.
     let consume_next_piece = held_piece.is_none();
     let swapped_in_canonical = held_piece
         .as_ref()
-        .map(|(_, tetromino)| *tetromino)
+        .map(|(_, tetromino)| **tetromino)
         .unwrap_or_else(|| state.bag.peek());
 
-    let candidate_piece = if state.manual_drop_gravity == HARD_DROP_GRAVITY {
-        to_board_position(swapped_in_canonical)
-    } else {
-        to_board_spawn(swapped_in_canonical)
-    };
+    // NEW IMPLEMENTATION: place the incoming piece near the old active piece's
+    // current board position.
+    let candidate_piece = move_to_active_anchor(*active_piece, swapped_in_canonical);
 
-    let Some(new_active_piece) =
-        resolve_swap(candidate_piece, &mut obstacles)
-    else {
-        // Abort the hold when the swapped-in piece still collides after 4 kicks.
+    let Some(new_active_piece) = resolve_hold_swap(candidate_piece, &mut obstacles) else {
         return;
     };
 
@@ -182,6 +184,8 @@ pub fn swap_hold(
         commands.entity(held_entity).despawn();
     }
 
+    // NEW IMPLEMENTATION: delete only the logical next preview piece, not the
+    // preview board tiles.
     for entity in &next_tetrominoes {
         commands.entity(entity).despawn();
     }
@@ -189,6 +193,14 @@ pub fn swap_hold(
     if consume_next_piece {
         let _ = state.bag.next_tetromino();
     }
+
+    keyboard.clear_just_pressed(KeyCode::ArrowDown);
+    keyboard.clear_just_pressed(KeyCode::ArrowLeft);
+    keyboard.clear_just_pressed(KeyCode::ArrowRight);
+    keyboard.clear_just_pressed(KeyCode::ArrowUp);
+    keyboard.clear_just_pressed(KeyCode::Space);
+    // NEW IMPLEMENTATION: a successful swap should reset the old lock delay.
+    lockdown.reset();
 
     commands.spawn((new_active_piece, Active));
     commands.spawn((new_hold_piece, Hold));
@@ -199,117 +211,71 @@ pub fn swap_hold(
 }
 ```
 
-### Why the color-to-canonical step is important
+## 3. Replace `setup_hold_window`
 
-The hold window is showing the piece in its canonical preview form, not in
-whatever rotated or shifted board state it had at the moment of the swap.
-
-So if the active piece is an `L` somewhere on the board, we do **not** store
-that exact world-space shape in the hold window.
-
-Instead, we:
-
-1. identify that it is an `L`
-2. create a fresh canonical `L`
-3. shift it into the hold preview window
-
-That matches the expected hold snapshots.
-
-### Why there are two board-placement rules
-
-For ordinary hold behavior, the swapped-in piece should come back through the
-normal spawn row.
-
-Example:
-
-- direct hold tests like `first_hold` and `next_hold` expect the incoming piece
-  to appear at the usual top area
-
-But when hard drop mode is enabled, the provided replay expects the held-in
-piece to stay in the current gameplay region instead of jumping to the top.
-
-Example:
-
-- if hard drop is on and the current active piece is around center `(4.0, 6.0)`,
-  the swapped-in piece should also appear around row `6`
-
-So the clean minimal rule is:
-
-1. if hard drop is off, use the normal spawn placement
-2. if hard drop is on, use the current active piece's rounded center
-3. in both cases, if it collides, kick it upward by up to 4 rows
-
-## Step 5: Add doc comments to the public hold items
-
-Add a short doc comment above:
-
-- `setup_hold_window`
-- `HoldPlugin`
-
-This keeps the `missing_docs` warnings under control.
-
-## Step 6: Finish the plugin
-
-Replace the starter plugin body with:
+Paste this function:
 
 ```rust
+/// NEW IMPLEMENTATION: Create the hold preview window on the side of the board.
+pub fn setup_hold_window(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let mesh = meshes.add(Rectangle::new(TILE_SIDE_LEN, TILE_SIDE_LEN));
+    let material = materials.add(BG_COLOR);
+
+    crate::board::spawn_side_window(
+        Transform::from_xyz(
+            (BOARD_WIDTH + 5) as f32 * TILE_SIDE_LEN * 0.5 + PADDING,
+            -window_height() * 0.5 + 5.0 * TILE_SIDE_LEN * 0.5 + PADDING,
+            0.0,
+        ),
+        mesh.clone(),
+        material.clone(),
+        &mut commands,
+        "Hold",
+        Hold,
+    );
+}
+```
+
+Why this matters:
+
+- hold needs its own 5x5 side board, just like next preview
+- this keeps the hold window in the bottom-right area
+- `spawn_side_window(...)` lets us reuse the same board-building logic
+
+## 4. Replace the plugin block
+
+Paste this block:
+
+```rust
+/// NEW IMPLEMENTATION: Plugin that adds hold input, hold swapping, and the
+/// hold side window.
+pub struct HoldPlugin;
+
 impl Plugin for HoldPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<PendingHold>()
-            .add_systems(Startup, setup_hold_window.in_set(Game))
-            .add_systems(
-                FixedUpdate,
-                swap_hold.before(crate::board::gravity).in_set(Game),
-            )
+        // NEW IMPLEMENTATION: keep the hold systems in the same general starter
+        // locations so students can still follow the file easily.
+        app.add_systems(Startup, setup_hold_window.in_set(Game))
             .add_systems(
                 Update,
-                (queue_hold_input, redraw_side_board::<Hold>).in_set(Game),
+                (
+                    swap_hold.before(crate::board::handle_user_input),
+                    redraw_side_board::<Hold>,
+                )
+                    .in_set(Game),
             );
     }
 }
 ```
 
-Why this ordering matters:
-
-- `queue_hold_input` runs in `Update` and remembers the key press
-- `swap_hold` runs in `FixedUpdate`, which is where the real gameplay update
-  happens
-- `swap_hold.before(crate::board::gravity)` keeps the hold action ahead of the
-  fixed gameplay fall step
-- `redraw_side_board::<Hold>` stays in `Update` because it is just UI refresh
-
-## Local checks
+## 5. Local checks
 
 Run:
 
 ```bash
-cargo fmt --all
+cargo nextest run --features test --retries 0 --test-threads=1 --test end_to_end first_hold next_hold z_rotate_hold_arrow --no-fail-fast
 ```
-
-Run:
-
-```bash
-cargo clippy --features test -- -D warnings
-```
-
-Run:
-
-```bash
-cargo nextest run --features test --retries 0 --test-threads=1 --test end_to_end first_hold next_hold --no-fail-fast
-```
-
-If you also want a stronger replay-style signal later, run:
-
-```bash
-cargo nextest run --features test --retries 0 --test-threads=1 --test end_to_end hard_drop_hold_0 --no-fail-fast
-```
-
-## Summary
-
-This feature should end with:
-
-- `X` queuing a hold request
-- first hold taking the next bag piece as active
-- later hold swapping active and held pieces
-- legal-swap resolution by kicking up to 4 rows
-- hold preview updating with canonical piece shapes

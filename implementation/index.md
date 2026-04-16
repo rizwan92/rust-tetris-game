@@ -1,17 +1,31 @@
-# Implementation Notes
+# Implementation Guides
 
-This directory is where we keep the feature-by-feature notes for the rebuilt
-starter-based solution.
+This directory was rebuilt from scratch for the current working code on
+`cleanup-refactor`.
 
-Our branch strategy is:
+These guides are for students who want:
 
-1. `starter-reset` is the clean base branch.
-2. Each feature starts from that base or from the previous feature branch.
-3. We keep the code close to the original assignment skeleton.
-4. We avoid adding new structs or helper functions unless the feature truly
-   needs them.
+1. the original starter file layout to stay in place
+2. copy-paste snippets for each feature
+3. comments in simple English inside the snippets
+4. one feature at a time, in the same order as the assignment
 
-Current feature notes:
+How to use these guides:
+
+1. start with `01-baseline.md`
+2. finish one feature completely before moving to the next
+3. paste each snippet into the same file and near the same place described in
+   the guide
+4. run the test commands at the end of each guide
+
+Important rule:
+
+- keep the older starter code where it already is
+- only paste the newer implementation snippets into the TODO areas or directly
+  near the related starter code
+- do not move whole systems around just to “clean up” the file
+
+Feature order:
 
 1. [Baseline](./01-baseline.md)
 2. [Config](./02-config.md)
@@ -21,8 +35,15 @@ Current feature notes:
 6. [Hard Drop](./06-hard-drop.md)
 7. [Hold](./07-hold.md)
 
-Local testing rule:
+Suggested check after every feature:
 
-- We trust compile errors, `cargo fmt`, `cargo clippy`, and deterministic tests.
-- We treat some sleep-based end-to-end failures on macOS as timing noise and let
-  Linux CI be the final judge for those.
+```bash
+cargo fmt --all
+cargo clippy --no-default-features --features ci -- -D warnings
+```
+
+Final Linux check:
+
+```bash
+cargo nextest run --no-default-features --features ci --verbose --no-fail-fast --retries 2
+```
