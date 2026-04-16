@@ -93,7 +93,7 @@ pub fn swap_hold(
     mut lockdown: ResMut<LockdownTimer>,
     active_tetrominoes: Query<(Entity, &Tetromino), With<Active>>,
     held_tetrominoes: Query<(Entity, &Tetromino), With<Hold>>,
-    next_tetrominoes: Query<Entity, With<Next>>,
+    next_tetrominoes: Query<Entity, (With<Next>, With<Tetromino>)>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
     // This system keeps the Bevy side small:

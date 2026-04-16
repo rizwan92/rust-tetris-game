@@ -407,7 +407,7 @@ pub fn spawn_next_tetromino(
     mut keyboard: ResMut<ButtonInput<KeyCode>>,
     mut state: ResMut<GameState>,
     active_tetrominoes: Query<Entity, With<Active>>,
-    next_tetrominoes: Query<Entity, With<Next>>,
+    next_tetrominoes: Query<Entity, (With<Next>, With<Tetromino>)>,
     obstacles: Query<&Block, With<Obstacle>>,
 ) {
     if !active_tetrominoes.is_empty() {
