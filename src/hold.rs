@@ -11,6 +11,72 @@ use bevy::prelude::*;
 #[derive(Component, Copy, Clone)]
 pub struct Hold;
 
+/// Recover the canonical spawn tetromino that matches a gameplay color.
+fn canonical_from_color(color: Color) -> Tetromino {
+    ALL_TETROMINO_TYPES
+        .into_iter()
+        .map(get_tetromino)
+        .find(|tetromino| tetromino.color == color)
+        .expect("every gameplay tetromino color should map to a canonical piece")
+}
+
+/// Place a tetromino into the 5x5 hold preview window.
+fn move_to_hold_window(mut tetromino: Tetromino) -> Tetromino {
+    let canonical = canonical_from_color(tetromino.color);
+    let preview_center = if canonical.center == (0.5, -0.5) {
+        (2.5, 2.5)
+    } else {
+        (canonical.center.0 + 2.0, canonical.center.1 + 2.0)
+    };
+
+    let dx = (preview_center.0 - tetromino.center().0).round() as i32;
+    let dy = (preview_center.1 - tetromino.center().1).round() as i32;
+    tetromino.shift(dx, dy);
+    tetromino
+}
+
+/// Place a tetromino at its normal spawn row on the main board.
+fn move_to_board_spawn(mut tetromino: Tetromino) -> Tetromino {
+    if tetromino.center == (0.5, -0.5) {
+        tetromino.shift(4, 19);
+    } else {
+        tetromino.shift(4, 18);
+    }
+    tetromino
+}
+
+/// Reuse the outgoing active piece offset when a hold swap spawns a new piece.
+fn move_to_active_anchor(active_piece: Tetromino, mut tetromino: Tetromino) -> Tetromino {
+    let active_spawn = move_to_board_spawn(canonical_from_color(active_piece.color));
+    let dx = (active_piece.center().0 - active_spawn.center().0).round() as i32;
+    let dy = (active_piece.center().1 - active_spawn.center().1).round() as i32;
+
+    let incoming_spawn = move_to_board_spawn(canonical_from_color(tetromino.color));
+    let center_dx = (incoming_spawn.center().0 - tetromino.center().0).round() as i32;
+    let center_dy = (incoming_spawn.center().1 - tetromino.center().1).round() as i32;
+    tetromino.shift(center_dx, center_dy);
+    tetromino.shift(dx, dy);
+    tetromino
+}
+
+/// Try the swapped-in hold piece at its spawn row, kicking it up if needed.
+fn resolve_hold_swap(
+    mut tetromino: Tetromino,
+    obstacles: &mut Query<&Block, With<Obstacle>>,
+) -> Option<Tetromino> {
+    for attempt in 0..=4 {
+        if !crate::there_is_collision(&tetromino, obstacles.reborrow()) {
+            return Some(tetromino);
+        }
+
+        if attempt < 4 {
+            tetromino.shift(0, 1);
+        }
+    }
+
+    None
+}
+
 /// Swap the current piece and the piece in the hold window on user input.
 ///
 /// If no piece is held, then take the next piece as the active piece and move
@@ -30,6 +96,9 @@ pub fn swap_hold(
     next_tetrominoes: Query<Entity, With<Next>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    // This system keeps the Bevy side small:
+    // read the current entities/resources, then let small helpers handle
+    // placement math for the hold window and spawn row.
     if !keyboard.just_pressed(KeyCode::KeyX) {
         return;
     }
@@ -39,67 +108,7 @@ pub fn swap_hold(
         return;
     };
 
-    let canonical_from_color = |color: Color| {
-        ALL_TETROMINO_TYPES
-            .into_iter()
-            .map(get_tetromino)
-            .find(|tetromino| tetromino.color == color)
-            .expect("every gameplay tetromino color should map to a canonical piece")
-    };
-
-    let to_hold_window = |mut tetromino: Tetromino| {
-        let preview_center = {
-            let canonical = canonical_from_color(tetromino.color);
-            if canonical.center == (0.5, -0.5) {
-                (2.5, 2.5)
-            } else {
-                (canonical.center.0 + 2.0, canonical.center.1 + 2.0)
-            }
-        };
-
-        let dx = (preview_center.0 - tetromino.center().0).round() as i32;
-        let dy = (preview_center.1 - tetromino.center().1).round() as i32;
-        tetromino.shift(dx, dy);
-        tetromino
-    };
-
-    let to_active_anchor = |mut tetromino: Tetromino| {
-        let spawn_on_board = |mut tetromino: Tetromino| {
-            if tetromino.center == (0.5, -0.5) {
-                tetromino.shift(4, 19);
-            } else {
-                tetromino.shift(4, 18);
-            }
-            tetromino
-        };
-
-        let active_spawn = spawn_on_board(canonical_from_color(active_piece.color));
-        let dx = (active_piece.center().0 - active_spawn.center().0).round() as i32;
-        let dy = (active_piece.center().1 - active_spawn.center().1).round() as i32;
-
-        let incoming_spawn = spawn_on_board(canonical_from_color(tetromino.color));
-        let center_dx = (incoming_spawn.center().0 - tetromino.center().0).round() as i32;
-        let center_dy = (incoming_spawn.center().1 - tetromino.center().1).round() as i32;
-        tetromino.shift(center_dx, center_dy);
-        tetromino.shift(dx, dy);
-        tetromino
-    };
-
-    let resolve_swap = |mut tetromino: Tetromino, obstacles: &mut Query<&Block, With<Obstacle>>| {
-        for attempt in 0..=4 {
-            if !crate::there_is_collision(&tetromino, obstacles.reborrow()) {
-                return Some(tetromino);
-            }
-
-            if attempt < 4 {
-                tetromino.shift(0, 1);
-            }
-        }
-
-        None
-    };
-
-    let new_hold_piece = to_hold_window(*active_piece);
+    let new_hold_piece = move_to_hold_window(*active_piece);
 
     let held_piece = held_tetrominoes.iter().next();
 
@@ -109,9 +118,9 @@ pub fn swap_hold(
         .map(|(_, tetromino)| **tetromino)
         .unwrap_or_else(|| state.bag.peek());
 
-    let candidate_piece = to_active_anchor(swapped_in_canonical);
+    let candidate_piece = move_to_active_anchor(*active_piece, swapped_in_canonical);
 
-    let Some(new_active_piece) = resolve_swap(candidate_piece, &mut obstacles) else {
+    let Some(new_active_piece) = resolve_hold_swap(candidate_piece, &mut obstacles) else {
         return;
     };
 

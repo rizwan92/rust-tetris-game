@@ -69,6 +69,57 @@ impl LockdownTimer {
     }
 }
 
+/// Reset the lock timer only when the moved piece is no longer grounded.
+fn reset_lockdown_after_move(
+    tetromino: Tetromino,
+    manual_drop_gravity: u32,
+    lockdown: &mut LockdownTimer,
+    obstacles: &mut Query<&Block, With<Obstacle>>,
+) {
+    let mut below = tetromino;
+    below.shift(0, -1);
+    if !crate::there_is_collision(&below, obstacles.reborrow())
+        || manual_drop_gravity == SOFT_DROP_GRAVITY
+    {
+        lockdown.reset();
+    }
+}
+
+/// Move the active piece to the candidate position if the move is legal.
+fn try_move_active(
+    tetromino: &mut Tetromino,
+    candidate: Tetromino,
+    manual_drop_gravity: u32,
+    lockdown: &mut LockdownTimer,
+    obstacles: &mut Query<&Block, With<Obstacle>>,
+) -> bool {
+    if crate::there_is_collision(&candidate, obstacles.reborrow()) {
+        return false;
+    }
+
+    *tetromino = candidate;
+    reset_lockdown_after_move(*tetromino, manual_drop_gravity, lockdown, obstacles);
+    true
+}
+
+/// Place a piece at its normal board spawn position.
+fn move_to_spawn_position(tetromino: &mut Tetromino) {
+    if tetromino.center == (0.5, -0.5) {
+        tetromino.shift(4, 19);
+    } else {
+        tetromino.shift(4, 18);
+    }
+}
+
+/// Clear one-frame gameplay input edges before a fresh piece becomes active.
+fn clear_gameplay_inputs(keyboard: &mut ButtonInput<KeyCode>) {
+    keyboard.clear_just_pressed(KeyCode::ArrowDown);
+    keyboard.clear_just_pressed(KeyCode::ArrowLeft);
+    keyboard.clear_just_pressed(KeyCode::ArrowRight);
+    keyboard.clear_just_pressed(KeyCode::ArrowUp);
+    keyboard.clear_just_pressed(KeyCode::Space);
+}
+
 // Create a logical tile to insert into a board.
 //
 // Board width and board height are the information of the board this tile is
@@ -211,6 +262,9 @@ pub fn handle_user_input(
     mut tetrominoes: Query<&mut Tetromino, With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
+    // The system itself stays small and Bevy-shaped:
+    // read resources/components, then delegate the repeated move rules to
+    // small helpers.
     let Ok(mut tetromino) = tetrominoes.single_mut() else {
         return;
     };
@@ -219,16 +273,14 @@ pub fn handle_user_input(
         for _ in 0..state.manual_drop_gravity {
             let mut candidate = *tetromino;
             candidate.shift(0, -1);
-            if crate::there_is_collision(&candidate, obstacles.reborrow()) {
+            if !try_move_active(
+                &mut tetromino,
+                candidate,
+                state.manual_drop_gravity,
+                &mut lockdown,
+                &mut obstacles,
+            ) {
                 break;
-            }
-            *tetromino = candidate;
-            let mut below = *tetromino;
-            below.shift(0, -1);
-            if !crate::there_is_collision(&below, obstacles.reborrow())
-                || state.manual_drop_gravity == SOFT_DROP_GRAVITY
-            {
-                lockdown.reset();
             }
         }
         keyboard.clear_just_pressed(KeyCode::ArrowDown);
@@ -237,48 +289,39 @@ pub fn handle_user_input(
     if keyboard.just_pressed(KeyCode::ArrowLeft) {
         let mut candidate = *tetromino;
         candidate.shift(-1, 0);
-        if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
-            *tetromino = candidate;
-            let mut below = *tetromino;
-            below.shift(0, -1);
-            if !crate::there_is_collision(&below, obstacles.reborrow())
-                || state.manual_drop_gravity == SOFT_DROP_GRAVITY
-            {
-                lockdown.reset();
-            }
-        }
+        let _ = try_move_active(
+            &mut tetromino,
+            candidate,
+            state.manual_drop_gravity,
+            &mut lockdown,
+            &mut obstacles,
+        );
         keyboard.clear_just_pressed(KeyCode::ArrowLeft);
     }
 
     if keyboard.just_pressed(KeyCode::ArrowRight) {
         let mut candidate = *tetromino;
         candidate.shift(1, 0);
-        if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
-            *tetromino = candidate;
-            let mut below = *tetromino;
-            below.shift(0, -1);
-            if !crate::there_is_collision(&below, obstacles.reborrow())
-                || state.manual_drop_gravity == SOFT_DROP_GRAVITY
-            {
-                lockdown.reset();
-            }
-        }
+        let _ = try_move_active(
+            &mut tetromino,
+            candidate,
+            state.manual_drop_gravity,
+            &mut lockdown,
+            &mut obstacles,
+        );
         keyboard.clear_just_pressed(KeyCode::ArrowRight);
     }
 
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::Space) {
         let mut candidate = *tetromino;
         candidate.rotate();
-        if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
-            *tetromino = candidate;
-            let mut below = *tetromino;
-            below.shift(0, -1);
-            if !crate::there_is_collision(&below, obstacles.reborrow())
-                || state.manual_drop_gravity == SOFT_DROP_GRAVITY
-            {
-                lockdown.reset();
-            }
-        }
+        let _ = try_move_active(
+            &mut tetromino,
+            candidate,
+            state.manual_drop_gravity,
+            &mut lockdown,
+            &mut obstacles,
+        );
         keyboard.clear_just_pressed(KeyCode::ArrowUp);
         keyboard.clear_just_pressed(KeyCode::Space);
     }
@@ -376,11 +419,7 @@ pub fn spawn_next_tetromino(
     }
 
     let mut active = state.bag.next_tetromino();
-    if active.center == (0.5, -0.5) {
-        active.shift(4, 19);
-    } else {
-        active.shift(4, 18);
-    }
+    move_to_spawn_position(&mut active);
 
     if crate::there_is_collision(&active, obstacles) {
         commands.trigger(GameOver);
@@ -396,11 +435,7 @@ pub fn spawn_next_tetromino(
         state.gravity_timer.reset();
     }
 
-    keyboard.clear_just_pressed(KeyCode::ArrowDown);
-    keyboard.clear_just_pressed(KeyCode::ArrowLeft);
-    keyboard.clear_just_pressed(KeyCode::ArrowRight);
-    keyboard.clear_just_pressed(KeyCode::ArrowUp);
-    keyboard.clear_just_pressed(KeyCode::Space);
+    clear_gameplay_inputs(&mut keyboard);
     commands.spawn((active, Active));
 
     let mut next = state.bag.peek();
