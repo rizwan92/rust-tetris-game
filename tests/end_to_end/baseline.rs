@@ -473,7 +473,6 @@ fn j_rotate() {
         i.shift(2, 16);
         i.center = (4.0, 18.0);
     }
-    eprintln!("{ts:?}");
     test_rotation(
         &mut app,
         KeyCode::KeyJ,
@@ -532,7 +531,6 @@ fn t_rotate() {
         i.shift(2, 16);
         i.center = (4.0, 18.0);
     }
-    eprintln!("{ts:?}");
     test_rotation(
         &mut app,
         KeyCode::KeyT,

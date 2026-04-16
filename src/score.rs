@@ -32,14 +32,6 @@ fn setup_score_text(mut commands: Commands) {
 fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
     let lines_cleared = event.0;
     assert!(lines_cleared <= 4);
-    crate::board::trace_event(format!(
-        "update_score: received LinesCleared({}) score={} level={} total_lines={} pending_lines={}",
-        lines_cleared,
-        state.score,
-        state.level,
-        state.lines_cleared,
-        state.lines_cleared_since_last_level
-    ));
 
     // If the event says zero lines were cleared, nothing should change.
     // This branch is mostly defensive because our collision code only emits the
@@ -100,18 +92,7 @@ fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
         } else {
             state.gravity_timer.set_elapsed(carried_elapsed);
         }
-        crate::board::trace_event(format!(
-            "update_score: leveled up to {} and carried gravity elapsed={:.3}s into {}",
-            state.level,
-            carried_elapsed.as_secs_f32(),
-            crate::board::gravity_snapshot(&state)
-        ));
     }
-
-    crate::board::trace_event(format!(
-        "update_score: final score={} level={} total_lines={} pending_lines={}",
-        state.score, state.level, state.lines_cleared, state.lines_cleared_since_last_level
-    ));
 }
 
 /// Update the score text.

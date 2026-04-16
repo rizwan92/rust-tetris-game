@@ -34,10 +34,6 @@ fn toggle_hard_drop(keyboard: Res<ButtonInput<KeyCode>>, mut hard_drop: Single<&
     // pressing Z once changes `false` -> `true`.
     if keyboard.just_pressed(KeyCode::KeyZ) {
         hard_drop.0 = !hard_drop.0;
-        crate::board::trace_event(format!(
-            "toggle_hard_drop: changed hard_drop to {}",
-            hard_drop.0
-        ));
     }
 }
 
@@ -58,10 +54,6 @@ fn update_drop_gravity(
         } else {
             SOFT_DROP_GRAVITY
         };
-        crate::board::trace_event(format!(
-            "update_drop_gravity: hard_drop={} manual_drop_gravity={}",
-            hard_drop.0, state.manual_drop_gravity
-        ));
     }
 }
 

@@ -43,23 +43,12 @@ pub fn swap_hold(
     if !keyboard.just_pressed(KeyCode::KeyX) {
         return;
     }
-    crate::board::trace_event(format!(
-        "swap_hold: received X press manual_drop={} held_count={} next_count={}",
-        state.manual_drop_gravity,
-        held_tetrominoes.iter().count(),
-        next_tetrominoes.iter().count()
-    ));
     keyboard.clear_just_pressed(KeyCode::KeyX);
 
     // If there is no active piece yet, we cannot perform a hold swap.
     let Ok((active_entity, active_piece)) = active_tetrominoes.single() else {
-        crate::board::trace_event("swap_hold: ignored because no active piece existed".to_string());
         return;
     };
-    crate::board::trace_event(format!(
-        "swap_hold: active before swap entity={:?} piece={:?}",
-        active_entity, active_piece
-    ));
 
     // Convert a tetromino color back to its canonical type.
     //
@@ -151,11 +140,6 @@ pub fn swap_hold(
     // Otherwise, use the bag's next piece, but do not consume it until the swap
     // is known to be legal.
     let held_piece = held_tetrominoes.iter().next();
-    crate::board::trace_event(format!(
-        "swap_hold: held_piece_present={} consume_next_piece={}",
-        held_piece.is_some(),
-        held_piece.is_none()
-    ));
 
     let consume_next_piece = held_piece.is_none();
     let swapped_in_canonical = held_piece
@@ -166,22 +150,11 @@ pub fn swap_hold(
     // The incoming hold piece should reuse the outgoing active piece's board
     // anchor instead of jumping back to the normal spawn row.
     let candidate_piece = to_active_anchor(swapped_in_canonical);
-    crate::board::trace_event(format!(
-        "swap_hold: candidate swapped-in piece before kicks {:?}",
-        candidate_piece
-    ));
 
     let Some(new_active_piece) = resolve_swap(candidate_piece, &mut obstacles) else {
         // Abort the hold if even the kicked-up placements are illegal.
-        crate::board::trace_event(
-            "swap_hold: aborted because all kicked placements still collided".to_string(),
-        );
         return;
     };
-    crate::board::trace_event(format!(
-        "swap_hold: resolved swapped-in piece {:?}",
-        new_active_piece
-    ));
 
     // At this point the swap is legal, so we can commit the world changes.
     commands.entity(active_entity).despawn();
@@ -197,7 +170,6 @@ pub fn swap_hold(
     if consume_next_piece {
         // Consume the same bag piece we previously previewed with `peek()`.
         let _ = state.bag.next_tetromino();
-        crate::board::trace_event("swap_hold: consumed next bag piece".to_string());
     }
 
     // Clear any leftover input edge from the outgoing piece before the swapped
@@ -212,23 +184,12 @@ pub fn swap_hold(
     keyboard.clear_just_pressed(KeyCode::ArrowUp);
     keyboard.clear_just_pressed(KeyCode::Space);
     lockdown.reset();
-    crate::board::trace_event(format!(
-        "swap_hold: committed active={:?} hold={:?} {} {}",
-        new_active_piece,
-        new_hold_piece,
-        crate::board::lockdown_snapshot(&lockdown),
-        crate::board::gravity_snapshot(&state)
-    ));
 
     commands.spawn((new_active_piece, Active));
     commands.spawn((new_hold_piece, Hold));
 
     let mut next_piece = state.bag.peek();
     next_piece.shift(2, 2);
-    crate::board::trace_event(format!(
-        "swap_hold: refreshed next preview {:?}",
-        next_piece
-    ));
     commands.spawn((next_piece, Next));
 }
 

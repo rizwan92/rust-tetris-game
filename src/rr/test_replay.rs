@@ -52,55 +52,21 @@ fn replay_input(
 ) {
     replay_event_this_tick.0 = None;
 
-    if let Some(event) = recording.events.front() {
-        crate::board::trace_event(format!(
-            "replay_input: fixed_time={:?} next_event_time={:?} due_now={} snapshots_remaining={} events_remaining={}",
-            time.elapsed(),
-            event.time,
-            event.time <= time.elapsed(),
-            recording.snapshots.len(),
-            recording.events.len()
-        ));
-    } else {
-        crate::board::trace_event(format!(
-            "replay_input: fixed_time={:?} no more events snapshots_remaining={}",
-            time.elapsed(),
-            recording.snapshots.len()
-        ));
-    }
-
     if let Some(event) = recording
         .events
         .pop_front_if(|event| event.time <= time.elapsed())
     {
         replay_event_this_tick.0 = Some(time.elapsed());
-        crate::board::trace_event(format!(
-            "replay_input: at {:?} applying event time={:?} press={:?} release={:?}",
-            time.elapsed(),
-            event.time,
-            event.just_pressed,
-            event.just_released
-        ));
         for key in &event.just_released {
             keyboard.release(*key);
         }
         for key in &event.just_pressed {
             keyboard.press(*key);
         }
-        crate::board::trace_event(format!(
-            "replay_input: after apply fixed_time={:?} pressed_down={} pressed_left={} pressed_right={} pressed_up={} pressed_space={}",
-            time.elapsed(),
-            keyboard.pressed(KeyCode::ArrowDown),
-            keyboard.pressed(KeyCode::ArrowLeft),
-            keyboard.pressed(KeyCode::ArrowRight),
-            keyboard.pressed(KeyCode::ArrowUp),
-            keyboard.pressed(KeyCode::Space)
-        ));
     }
 
     if recording.events.is_empty() {
         if stats.mismatches <= MAX_STATE_MISMATCHES {
-            info!("Passed with {} mismatched states", stats.mismatches);
             commands.trigger(TestPass)
         } else {
             commands.trigger(TestFail)
@@ -124,12 +90,6 @@ fn compare_states(
     mut commands: Commands,
 ) {
     let t_actual = time.elapsed();
-    crate::board::trace_event(format!(
-        "compare_states: at {:?} snapshots_remaining={} events_remaining={}",
-        t_actual,
-        recording.snapshots.len(),
-        recording.events.len()
-    ));
 
     if recording.snapshots.is_empty() {
         return;
@@ -156,55 +116,15 @@ fn compare_states(
         actual
     };
 
-    let actual_active = actual
-        .active
-        .map(|tetromino| format!("{:?} @ {:?}", tetromino.center(), tetromino.cells()))
-        .unwrap_or_else(|| "none".to_string());
-
     // do a linear scan until we match a state
-    let Some((skipped, _)) = recording.snapshots.iter().enumerate().take(MAX_STATE_LOOKAHEAD).find(|(i, (t_expected, expected))| {
-        if actual == *expected {
-                if *i > 0 && *t_expected >= t_actual + FIXED_FRAME_DURATION {
-                    info!(
-                        "Possible jitter at time {t_actual:?} but the state at time {t_expected:?} matches. Skipped {i} states"
-                    );
-                }
-            true
-        } else {
-            false
-        }
-    }) else {
-        if let Some((_, expected))= recording.snapshots.front() {
-        let expected_active = expected
-            .active
-            .map(|tetromino| format!("{:?} @ {:?}", tetromino.center(), tetromino.cells()))
-            .unwrap_or_else(|| "none".to_string());
-        let next_active = recording
-            .snapshots
-            .get(1)
-            .and_then(|(_, snapshot)| snapshot.active)
-            .map(|tetromino| format!("{:?} @ {:?}", tetromino.center(), tetromino.cells()))
-            .unwrap_or_else(|| "none".to_string());
-        crate::board::trace_event(format!(
-            "compare_states: diverged at {:?} actual_active={} expected_active={} next_active={}",
-            t_actual,
-            actual_active,
-            expected_active,
-            next_active,
-        ));
-        warn!(r#"The states diverge at time {t_actual:?} and fast-forward is not possible.
-Actual state:
-{actual:?}
-Expected state:
-{expected:?}
-Next state:
-{:?}
-"#, recording.snapshots.get(1));
-        }
+    let Some((skipped, _)) = recording
+        .snapshots
+        .iter()
+        .enumerate()
+        .take(MAX_STATE_LOOKAHEAD)
+        .find(|(_, (_, expected))| actual == *expected)
+    else {
         if replay_event_this_tick.0 == Some(t_actual) {
-            info!(
-                "Possible jitter at time {t_actual:?} immediately after replay input; deferring mismatch check by one frame"
-            );
             return;
         }
         stats.mismatches += 1;
@@ -217,12 +137,6 @@ Next state:
     // drop all the states we skipped.
     //
     // using split_off because truncate_front is not stable yet.
-    crate::board::trace_event(format!(
-        "compare_states: matched actual at {:?} by skipping {} snapshot(s), next_expected={:?}",
-        t_actual,
-        skipped,
-        recording.snapshots.get(skipped).map(|(time, _)| *time)
-    ));
     recording.snapshots = recording.snapshots.split_off(skipped);
 }
 
