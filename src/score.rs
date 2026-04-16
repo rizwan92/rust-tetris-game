@@ -28,7 +28,11 @@ fn setup_score_text(mut commands: Commands) {
     ));
 }
 
-/// Update the game state when lines are cleared
+/// NEW IMPLEMENTATION: Update the game state when lines are cleared.
+///
+/// Simple example:
+/// if the player clears 4 lines at level 2, the score gain is
+/// `1200 * (2 + 1) = 3600`.
 fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
     let lines_cleared = event.0;
     assert!(lines_cleared <= 4);
@@ -50,10 +54,17 @@ fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
     state.lines_cleared += lines_cleared;
     state.lines_cleared_since_last_level += lines_cleared;
 
+    // NEW IMPLEMENTATION: allow more than one level-up if the saved line count
+    // is already large enough.
     while state.lines_cleared_since_last_level >= (state.level + 1) * 10 {
         state.lines_cleared_since_last_level -= (state.level + 1) * 10;
         state.level += 1;
 
+        // NEW IMPLEMENTATION: keep the gravity progress when the level changes.
+        //
+        // Simple example:
+        // if the old timer already waited 0.6 seconds, we should not throw that
+        // away and restart from 0.0 seconds on the new level.
         let carried_elapsed = state.gravity_timer.elapsed();
         let new_duration = state.drop_interval();
         state.gravity_timer = Timer::new(new_duration, TimerMode::Repeating);
@@ -75,7 +86,8 @@ fn update_score_text(state: Res<GameState>, mut text: Single<&mut Text, With<Sco
     );
 }
 
-/// Plugin that adds score tracking, leveling, and score text updates.
+/// NEW IMPLEMENTATION: Plugin that adds score tracking, leveling, and score
+/// text updates.
 pub struct ScorePlugin;
 
 impl Plugin for ScorePlugin {

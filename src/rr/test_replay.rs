@@ -38,10 +38,20 @@ const MAX_STATE_MISMATCHES: usize = 1;
 // Maximum number of states to look ahead for a desync
 const MAX_STATE_LOOKAHEAD: usize = 10;
 
-/// Tracks whether replay injected an input edge on the current fixed tick.
+/// NEW IMPLEMENTATION: Tracks whether replay injected an input edge on the
+/// current fixed tick.
+///
+/// Simple example:
+/// if replay presses Right exactly on fixed tick `10.15625s`, we remember that
+/// time here so the compare step can be more careful on that tick.
 #[derive(Resource, Default)]
 struct ReplayEventThisTick(Option<Duration>);
 
+/// NEW IMPLEMENTATION: Feed recorded keyboard edges back into Bevy input.
+///
+/// Simple example:
+/// if the recording says "press Left now", this function presses Left in
+/// `ButtonInput<KeyCode>` on the matching fixed tick.
 fn replay_input(
     mut keyboard: ResMut<ButtonInput<KeyCode>>,
     mut recording: ResMut<GameRecording>,
@@ -50,12 +60,16 @@ fn replay_input(
     mut replay_event_this_tick: ResMut<ReplayEventThisTick>,
     mut commands: Commands,
 ) {
+    // NEW IMPLEMENTATION: clear the marker first, then set it again only if
+    // this tick really injects replay input.
     replay_event_this_tick.0 = None;
 
     if let Some(event) = recording
         .events
         .pop_front_if(|event| event.time <= time.elapsed())
     {
+        // NEW IMPLEMENTATION: remember the exact fixed tick that received
+        // replay input.
         replay_event_this_tick.0 = Some(time.elapsed());
         for key in &event.just_released {
             keyboard.release(*key);
@@ -66,6 +80,8 @@ fn replay_input(
     }
 
     if recording.events.is_empty() {
+        // NEW IMPLEMENTATION: once all replay input is consumed, decide pass or
+        // fail from the mismatch count.
         if stats.mismatches <= MAX_STATE_MISMATCHES {
             commands.trigger(TestPass)
         } else {
@@ -89,6 +105,8 @@ fn compare_states(
     ignore_score: Option<Res<IgnoreScore>>,
     mut commands: Commands,
 ) {
+    // NEW IMPLEMENTATION: this is the current fixed-step time for the live
+    // simulation.
     let t_actual = time.elapsed();
 
     if recording.snapshots.is_empty() {
@@ -106,6 +124,8 @@ fn compare_states(
         state,
     );
     let actual = if ignore_score.is_some() {
+        // NEW IMPLEMENTATION: some tests care only about piece positions, not
+        // score, level, or cleared-line numbers.
         Snapshot {
             score: 0,
             lines_cleared: 0,
@@ -116,7 +136,12 @@ fn compare_states(
         actual
     };
 
-    // do a linear scan until we match a state
+    // NEW IMPLEMENTATION: look a few snapshots ahead to see whether the live
+    // state matches very soon.
+    //
+    // Simple example:
+    // if replay is one fixed frame ahead, the match may be at offset 1 instead
+    // of exactly the front snapshot.
     let Some((skipped, _)) = recording
         .snapshots
         .iter()
@@ -124,6 +149,8 @@ fn compare_states(
         .take(MAX_STATE_LOOKAHEAD)
         .find(|(_, (_, expected))| actual == *expected)
     else {
+        // NEW IMPLEMENTATION: if replay injected input on this exact tick, give
+        // the next fixed tick a chance before counting a mismatch.
         if replay_event_this_tick.0 == Some(t_actual) {
             return;
         }
@@ -134,9 +161,9 @@ fn compare_states(
         return;
     };
 
-    // drop all the states we skipped.
+    // NEW IMPLEMENTATION: drop the old snapshots that we skipped past.
     //
-    // using split_off because truncate_front is not stable yet.
+    // We use `split_off` because `truncate_front` is not stable yet.
     recording.snapshots = recording.snapshots.split_off(skipped);
 }
 
@@ -171,8 +198,8 @@ fn adjust_scores(ignore_score: Option<Res<IgnoreScore>>, mut recording: ResMut<G
     }
 }
 
-/// A plugin for replaying a game recording.  The game recording must be given
-/// as a `GameRecording` resource.
+/// NEW IMPLEMENTATION: A plugin for replaying a game recording. The game
+/// recording must be given as a `GameRecording` resource.
 #[derive(Default)]
 pub struct TestReplayPlugin {
     /// Whether this test should ignore or check scores
@@ -181,6 +208,8 @@ pub struct TestReplayPlugin {
 
 impl Plugin for TestReplayPlugin {
     fn build(&self, app: &mut App) {
+        // NEW IMPLEMENTATION: inject replay input before the fixed-step game
+        // logic and compare states after the fixed-step game logic.
         app.add_systems(FixedPreUpdate, replay_input)
             .add_systems(FixedPostUpdate, compare_states)
             .add_systems(Startup, adjust_scores)
