@@ -50,16 +50,10 @@ pub struct BlockedAutoDrop(pub bool);
 impl LockdownTimer {
     // Advance the timer. Start it if it hasn't been started.
     fn start_or_advance(&mut self, time: Res<Time<Fixed>>) {
-        // If this is the first frame where the piece is stuck,
-        // create the one-shot timer now.
-        // Example:
-        // a J piece touches the floor for the first time, so lockdown begins.
         if self.0.is_none() {
             self.0 = Some(Timer::new(LOCKDOWN_DURATION, TimerMode::Once));
         }
 
-        // Once the timer exists, move it forward by one fixed-step delta.
-        // This is what eventually makes the piece lock into obstacles.
         if let Some(timer) = &mut self.0 {
             timer.tick(time.delta());
         }
@@ -217,32 +211,18 @@ pub fn handle_user_input(
     mut tetrominoes: Query<&mut Tetromino, With<Active>>,
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
-    // If there is no active tetromino yet, there is nothing to move.
     let Ok(mut tetromino) = tetrominoes.single_mut() else {
         return;
     };
 
-    // Down happens first by the baseline spec.
-    // Example:
-    // if the player presses down and right together, we must drop first.
     if keyboard.just_pressed(KeyCode::ArrowDown) {
-        // The game state decides how strong a manual drop is.
-        // In the baseline this is usually 1, but hard drop will reuse this later.
         for _ in 0..state.manual_drop_gravity {
-            // Create a candidate piece one row lower.
             let mut candidate = *tetromino;
             candidate.shift(0, -1);
-            // If moving down would be illegal, stop the manual drop loop.
             if crate::there_is_collision(&candidate, obstacles.reborrow()) {
                 break;
             }
-            // Otherwise accept the lower position.
             *tetromino = candidate;
-            // Only reset lockdown when the moved piece is no longer grounded.
-            //
-            // If a move keeps the piece resting on the floor or stack, the
-            // existing lock countdown should continue instead of restarting
-            // from scratch.
             let mut below = *tetromino;
             below.shift(0, -1);
             if !crate::there_is_collision(&below, obstacles.reborrow())
@@ -254,12 +234,9 @@ pub fn handle_user_input(
         keyboard.clear_just_pressed(KeyCode::ArrowDown);
     }
 
-    // Left happens after down.
     if keyboard.just_pressed(KeyCode::ArrowLeft) {
-        // Try the move on a copy first.
         let mut candidate = *tetromino;
         candidate.shift(-1, 0);
-        // Only commit the move when it stays legal.
         if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
             *tetromino = candidate;
             let mut below = *tetromino;
@@ -273,7 +250,6 @@ pub fn handle_user_input(
         keyboard.clear_just_pressed(KeyCode::ArrowLeft);
     }
 
-    // Right happens after left.
     if keyboard.just_pressed(KeyCode::ArrowRight) {
         let mut candidate = *tetromino;
         candidate.shift(1, 0);
@@ -290,10 +266,7 @@ pub fn handle_user_input(
         keyboard.clear_just_pressed(KeyCode::ArrowRight);
     }
 
-    // Up or Space means rotate.
-    // Using `||` here matches the spec: pressing both should still rotate once.
     if keyboard.just_pressed(KeyCode::ArrowUp) || keyboard.just_pressed(KeyCode::Space) {
-        // Rotate a copy first so illegal rotations can be rejected safely.
         let mut candidate = *tetromino;
         candidate.rotate();
         if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
@@ -320,38 +293,21 @@ pub fn gravity(
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
     blocked_auto_drop.0 = false;
-
-    // Advance the repeating gravity timer every fixed frame.
     state.gravity_timer.tick(time.delta());
-    // If the timer has not fired yet, do nothing this frame.
     if !state.gravity_timer.just_finished() {
         return;
     }
 
-    // No active piece means there is nothing to drop.
     let Ok(mut tetromino) = tetrominoes.single_mut() else {
         return;
     };
 
-    // Try moving the active piece down by one row.
     let mut candidate = *tetromino;
     candidate.shift(0, -1);
-    // Only accept the move when there is no collision.
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
         *tetromino = candidate;
     } else {
         blocked_auto_drop.0 = true;
-        // Keep the repeating gravity timer continuous even when an automatic
-        // drop is blocked.
-        //
-        // This gives us one global gravity schedule instead of two conflicting
-        // interpretations of the timer:
-        // 1. "time until the active piece should auto-drop"
-        // 2. "heuristic carry value we might rewrite during spawn"
-        //
-        // The replay recordings are much happier when the timer simply keeps
-        // its wrapped remainder here and the next piece inherits that schedule
-        // naturally.
     }
 }
 
@@ -366,46 +322,29 @@ pub fn deactivate_if_stuck(
     mut obstacles: Query<&Block, With<Obstacle>>,
 ) {
     let waiting_before_lock = lockdown.0.is_some();
-    // If there is no active tetromino, make sure the lockdown timer is clear.
     let Ok((entity, tetromino)) = tetrominoes.single() else {
         lockdown.reset();
         return;
     };
 
-    // Check whether the piece could move down one more row.
     let mut candidate = *tetromino;
     candidate.shift(0, -1);
-    // If downward movement is still possible, the piece is not stuck yet.
     if !crate::there_is_collision(&candidate, obstacles.reborrow()) {
         lockdown.reset();
         return;
     }
 
-    // If the current fixed step already spent its automatic gravity probe on a
-    // blocked move, treat that as the "ground check" for this frame.
-    //
-    // That keeps lockdown from effectively advancing twice in one fixed step:
-    // once because gravity discovered the block, and again because this system
-    // immediately sees the same grounded piece.
     if waiting_before_lock && blocked_auto_drop.0 && state.manual_drop_gravity == SOFT_DROP_GRAVITY
     {
         return;
     }
 
-    // The piece is resting on the floor or on something else,
-    // so advance the lock countdown.
     lockdown.start_or_advance(time);
-    // If the timer has not finished yet, keep waiting.
     if !lockdown.just_finished() {
         return;
     }
 
-    // The piece is officially locked now, so remove the active tetromino entity.
     commands.entity(entity).despawn();
-    // Replace that tetromino with four obstacle blocks.
-    // Example:
-    // if a J locks at the bottom-left, we spawn four `Block + Obstacle` entities
-    // at exactly those four cells.
     for &cell in tetromino.cells() {
         commands.spawn((
             Block {
@@ -415,7 +354,6 @@ pub fn deactivate_if_stuck(
             Obstacle,
         ));
     }
-    // Clear the timer so the next spawned piece starts fresh.
     lockdown.reset();
 }
 
@@ -429,45 +367,26 @@ pub fn spawn_next_tetromino(
     next_tetrominoes: Query<Entity, With<Next>>,
     obstacles: Query<&Block, With<Obstacle>>,
 ) {
-    // Only spawn when there is no active tetromino on the board.
     if !active_tetrominoes.is_empty() {
         return;
     }
 
-    // Remove the old preview piece before creating the new one.
     for entity in &next_tetrominoes {
         commands.entity(entity).despawn();
     }
 
-    // Take the next real piece out of the bag.
     let mut active = state.bag.next_tetromino();
-    // Most pieces spawn with their logical center shifted by (4, 18).
-    // Example:
-    // J, L, S, Z, and T all use this branch.
     if active.center == (0.5, -0.5) {
-        // The I piece is one row higher because its center is different.
         active.shift(4, 19);
     } else {
         active.shift(4, 18);
     }
 
-    // Collision-enabled gameplay must also check whether the new spawn position
-    // is already occupied.
-    // Example:
-    // if the stack has reached the top and the new piece overlaps it
-    // immediately, the game is over and we should not spawn an illegal piece.
     if crate::there_is_collision(&active, obstacles) {
         commands.trigger(GameOver);
         return;
     }
 
-    // Most spawns should inherit the repeating gravity schedule naturally.
-    //
-    // The replay recordings only need smoothing in the extreme "tiny leftover"
-    // cases:
-    // - hard drop keeps the broader one-frame smoothing rule
-    // - ordinary soft drop only smooths the truly tiny remainder that would
-    //   otherwise create a phantom one-frame auto-drop immediately after spawn
     let soft_spawn_smoothing = crate::rr::FIXED_FRAME_DURATION.mul_f32(0.5);
     let reset_for_hard_drop = state.manual_drop_gravity > SOFT_DROP_GRAVITY
         && state.gravity_timer.remaining() <= crate::rr::FIXED_FRAME_DURATION;
@@ -477,8 +396,6 @@ pub fn spawn_next_tetromino(
         state.gravity_timer.reset();
     }
 
-    // Spawn the active gameplay piece.
-    //
     keyboard.clear_just_pressed(KeyCode::ArrowDown);
     keyboard.clear_just_pressed(KeyCode::ArrowLeft);
     keyboard.clear_just_pressed(KeyCode::ArrowRight);
@@ -486,11 +403,8 @@ pub fn spawn_next_tetromino(
     keyboard.clear_just_pressed(KeyCode::Space);
     commands.spawn((active, Active));
 
-    // Peek at the upcoming piece without consuming it.
     let mut next = state.bag.peek();
-    // Shift the preview tetromino into the center of the 5x5 next window.
     next.shift(2, 2);
-    // Spawn the logical preview piece.
     commands.spawn((next, Next));
 }
 
@@ -502,22 +416,14 @@ pub fn redraw_board(
     obstacles: Query<&Block, With<Obstacle>>,
     mut board: ResMut<Board>,
 ) {
-    // This map stores the color each visible board tile should receive.
-    // If a tile is missing from the map, it falls back to the black background.
     let mut colors = HashMap::<Entity, Color>::new();
 
-    // First, paint the currently active tetromino.
-    // Example:
-    // if the active O sits at cells (4,18), (4,19), (5,18), (5,19),
-    // those four board tile entities get the O color.
     for tetromino in &tetrominoes {
         for &Cell(x, y) in tetromino.cells().iter().filter(|cell| cell.is_visible()) {
             colors.insert(board.cells[y as usize][x as usize], tetromino.color);
         }
     }
 
-    // Then, paint the obstacle blocks.
-    // Obstacles overwrite the same map because they are part of the final board state.
     for block in obstacles.iter().filter(|block| block.cell.is_visible()) {
         let Cell(x, y) = block.cell;
         colors.insert(board.cells[y as usize][x as usize], block.color);
@@ -538,18 +444,12 @@ pub fn redraw_side_board<Marker: Component>(
     side_board: Query<(&mut Block, Entity), With<Marker>>,
     tetromino: Option<Single<&Tetromino, With<Marker>>>,
 ) {
-    // Walk through every tile in the side board.
     for (block, entity) in &side_board {
-        // If the preview/held tetromino contains this logical side-board cell,
-        // use the tetromino color; otherwise use the background color.
-        // Example:
-        // for the next preview, only four cells out of the 5x5 window will be colored.
         let color = tetromino
             .as_ref()
             .filter(|tetromino| tetromino.cells().contains(&block.cell))
             .map(|tetromino| tetromino.color)
             .unwrap_or(BG_COLOR);
-        // Replace the material on that tile so the side window redraws correctly.
         commands
             .entity(entity)
             .insert(MeshMaterial2d(materials.add(color)));

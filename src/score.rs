@@ -33,17 +33,10 @@ fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
     let lines_cleared = event.0;
     assert!(lines_cleared <= 4);
 
-    // If the event says zero lines were cleared, nothing should change.
-    // This branch is mostly defensive because our collision code only emits the
-    // event for positive line clears.
     if lines_cleared == 0 {
         return;
     }
 
-    // The assignment gives a fixed multiplier table based on how many lines
-    // disappear at once.
-    // Example:
-    // clearing 2 lines at level 0 gives 100 * (0 + 1) = 100 points.
     let multiplier = match lines_cleared {
         1 => 40,
         2 => 100,
@@ -52,42 +45,19 @@ fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
         _ => unreachable!("more than 4 lines cannot be cleared at once"),
     };
 
-    // The score always scales with the current level + 1.
-    // Example:
-    // clearing a Tetris at level 2 gives 1200 * 3 = 3600 points.
     state.score += multiplier * (state.level + 1);
 
-    // Keep both total line counters up to date.
-    // `lines_cleared` is the whole-game total.
-    // `lines_cleared_since_last_level` is the progress toward the next level.
     state.lines_cleared += lines_cleared;
     state.lines_cleared_since_last_level += lines_cleared;
 
-    // Level thresholds follow the assignment rule:
-    // to go from level N to level N+1, we need (N + 1) * 10 cleared lines since
-    // the last level up.
-    // Example:
-    // level 0 -> 1 needs 10 lines
-    // level 1 -> 2 needs 20 more lines
     while state.lines_cleared_since_last_level >= (state.level + 1) * 10 {
         state.lines_cleared_since_last_level -= (state.level + 1) * 10;
         state.level += 1;
 
-        // Gravity should immediately use the faster interval for the new level,
-        // but we should not throw away the time the current piece has already
-        // spent falling.
-        //
-        // Example:
-        // if the old timer had already accumulated 0.46s and the new interval
-        // is 0.71s, the next automatic drop should happen after about 0.25s,
-        // not after a completely fresh 0.71s wait.
         let carried_elapsed = state.gravity_timer.elapsed();
         let new_duration = state.drop_interval();
         state.gravity_timer = Timer::new(new_duration, TimerMode::Repeating);
         if carried_elapsed >= new_duration {
-            // If the new level is so fast that this carry would already have
-            // finished the timer, schedule the drop on the very next fixed
-            // step instead of inventing a brand-new full interval.
             state.gravity_timer.almost_finish();
         } else {
             state.gravity_timer.set_elapsed(carried_elapsed);
@@ -97,11 +67,6 @@ fn update_score(event: On<LinesCleared>, mut state: ResMut<GameState>) {
 
 /// Update the score text.
 fn update_score_text(state: Res<GameState>, mut text: Single<&mut Text, With<ScoreMarker>>) {
-    // Rewrite the entire text each frame.
-    // Example:
-    // Score: 1200
-    // Level: 1
-    // Lines: 10
     text.0 = format!(
         "Score: {}\nLevel: {}\nLines: {}",
         state.score(),
