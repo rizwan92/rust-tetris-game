@@ -6,7 +6,9 @@ edition = "2024"
 [dependencies]
 bevy = { version = "0.18.0", default-features = false, features = [
 "2d",
+"dev",
 "experimental_bevy_ui_widgets",
+"dynamic_linking",
 ] }
 clap = { version = "4.5.60", features = ["derive"] }
 rand = "0.9.2"
@@ -33,7 +35,7 @@ hard_drop = ["collision"]
 hold = ["collision"]
 extra_credit = ["hold", "hard_drop", "score", "rng"]
 default = ["dev"]
-dev = ["common", "bevy/dev", "bevy/dynamic_linking"]
+dev = ["common", "bevy/dynamic_linking"]
 test = ["dev", "bevy/bevy_ci_testing"]
 ci = ["common", "bevy/bevy_ci_testing"]
 common = ["enabled_features", "bevy/debug", "bevy/serialize", "bevy/experimental_bevy_ui_widgets"]
