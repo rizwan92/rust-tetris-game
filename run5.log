@@ -1,0 +1,170 @@
+Your branch is up to date with 'origin/cleanup-refactor'.
+HEAD is now at 9a5587f Restore original Cargo feature layout
+9a5587f
+    Blocking waiting for file lock on artifact directory
+   Compiling bevy_dev_tools v0.18.0
+   Compiling bevy_gizmos_render v0.18.0
+   Compiling bevy_post_process v0.18.0
+   Compiling bevy_internal v0.18.0
+   Compiling bevy_dylib v0.18.0
+   Compiling bevy v0.18.0
+   Compiling blox v0.1.0 (/home/ubuntu/rust-tetris-game)
+    Finished `test` profile [optimized + debuginfo] target(s) in 2m 06s
+────────────
+ Nextest run ID b243ee8d-1dbf-484f-aa27-089976c00569 with nextest profile: default
+    Starting 51 tests across 3 binaries
+       START [         ] ( 1/51) blox config::tests::bag_creation
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact config::tests::bag_creation --nocapture
+        PASS [   0.008s] ( 1/51) blox config::tests::bag_creation
+       START [         ] ( 2/51) blox config::tests::default_game_state
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact config::tests::default_game_state --nocapture
+        PASS [   0.008s] ( 2/51) blox config::tests::default_game_state
+       START [         ] ( 3/51) blox config::tests::load_animate_title_false
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact config::tests::load_animate_title_false --nocapture
+        PASS [   0.008s] ( 3/51) blox config::tests::load_animate_title_false
+       START [         ] ( 4/51) blox config::tests::load_deterministic_config
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact config::tests::load_deterministic_config --nocapture
+        PASS [   0.008s] ( 4/51) blox config::tests::load_deterministic_config
+       START [         ] ( 5/51) blox config::tests::load_rejects_invalid_json
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact config::tests::load_rejects_invalid_json --nocapture
+        PASS [   0.008s] ( 5/51) blox config::tests::load_rejects_invalid_json
+       START [         ] ( 6/51) blox data::tests::drop_interval
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact data::tests::drop_interval --nocapture
+        PASS [   0.008s] ( 6/51) blox data::tests::drop_interval
+       START [         ] ( 7/51) blox data::tests::initial_drop_interval
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact data::tests::initial_drop_interval --nocapture
+        PASS [   0.008s] ( 7/51) blox data::tests::initial_drop_interval
+       START [         ] ( 8/51) blox data::tests::is_o
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact data::tests::is_o --nocapture
+        PASS [   0.008s] ( 8/51) blox data::tests::is_o
+       START [         ] ( 9/51) blox data::tests::rotate_cell
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact data::tests::rotate_cell --nocapture
+        PASS [   0.008s] ( 9/51) blox data::tests::rotate_cell
+       START [         ] (10/51) blox data::tests::rotate_cells
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact data::tests::rotate_cells --nocapture
+        PASS [   0.008s] (10/51) blox data::tests::rotate_cells
+       START [         ] (11/51) blox data::tests::rotate_semi_involution
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact data::tests::rotate_semi_involution --nocapture
+        PASS [   0.008s] (11/51) blox data::tests::rotate_semi_involution
+       START [         ] (12/51) blox data::tests::rotate_test_center
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact data::tests::rotate_test_center --nocapture
+        PASS [   0.008s] (12/51) blox data::tests::rotate_test_center
+       START [         ] (13/51) blox data::tests::shift
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact data::tests::shift --nocapture
+        PASS [   0.008s] (13/51) blox data::tests::shift
+       START [         ] (14/51) blox score::tests::level_thresholds_match_spec
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact score::tests::level_thresholds_match_spec --nocapture
+        PASS [   0.008s] (14/51) blox score::tests::level_thresholds_match_spec
+       START [         ] (15/51) blox score::tests::score_single_line_at_level_zero
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact score::tests::score_single_line_at_level_zero --nocapture
+        PASS [   0.008s] (15/51) blox score::tests::score_single_line_at_level_zero
+       START [         ] (16/51) blox score::tests::score_tetris_scales_with_level
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/blox-34fb5de35d8bbdea --exact score::tests::score_tetris_scales_with_level --nocapture
+        PASS [   0.008s] (16/51) blox score::tests::score_tetris_scales_with_level
+       START [         ] (17/51) blox::end_to_end basic_game_over
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact basic_game_over --nocapture
+        PASS [  11.431s] (17/51) blox::end_to_end basic_game_over
+       START [         ] (18/51) blox::end_to_end basic_stacking
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact basic_stacking --nocapture
+        PASS [   1.408s] (18/51) blox::end_to_end basic_stacking
+       START [         ] (19/51) blox::end_to_end first_hold
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact first_hold --nocapture
+        PASS [   0.106s] (19/51) blox::end_to_end first_hold
+       START [         ] (20/51) blox::end_to_end gravity1
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact gravity1 --nocapture
+        PASS [   0.781s] (20/51) blox::end_to_end gravity1
+       START [         ] (21/51) blox::end_to_end gravity_and_input
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact gravity_and_input --nocapture
+        PASS [   1.440s] (21/51) blox::end_to_end gravity_and_input
+       START [         ] (22/51) blox::end_to_end hard_drop_67
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact hard_drop_67 --nocapture
+        PASS [   9.656s] (22/51) blox::end_to_end hard_drop_67
+       START [         ] (23/51) blox::end_to_end hard_drop_727
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact hard_drop_727 --nocapture
+        PASS [   6.394s] (23/51) blox::end_to_end hard_drop_727
+       START [         ] (24/51) blox::end_to_end hard_drop_deterministic
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact hard_drop_deterministic --nocapture
+        PASS [   5.516s] (24/51) blox::end_to_end hard_drop_deterministic
+       START [         ] (25/51) blox::end_to_end hard_drop_deterministic2
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact hard_drop_deterministic2 --nocapture
+        PASS [   1.032s] (25/51) blox::end_to_end hard_drop_deterministic2
+       START [         ] (26/51) blox::end_to_end hard_drop_hold_0
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact hard_drop_hold_0 --nocapture
+        PASS [   8.504s] (26/51) blox::end_to_end hard_drop_hold_0
+       START [         ] (27/51) blox::end_to_end i_rotate
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact i_rotate --nocapture
+        PASS [   0.240s] (27/51) blox::end_to_end i_rotate
+       START [         ] (28/51) blox::end_to_end i_spawn
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact i_spawn --nocapture
+        PASS [   0.081s] (28/51) blox::end_to_end i_spawn
+       START [         ] (29/51) blox::end_to_end j_rotate
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact j_rotate --nocapture
+        PASS [   0.119s] (29/51) blox::end_to_end j_rotate
+       START [         ] (30/51) blox::end_to_end j_spawn
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact j_spawn --nocapture
+        PASS [   0.079s] (30/51) blox::end_to_end j_spawn
+       START [         ] (31/51) blox::end_to_end l_rotate
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact l_rotate --nocapture
+        PASS [   0.127s] (31/51) blox::end_to_end l_rotate
+       START [         ] (32/51) blox::end_to_end level_up
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact level_up --nocapture
+        PASS [  51.477s] (32/51) blox::end_to_end level_up
+       START [         ] (33/51) blox::end_to_end next_hold
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact next_hold --nocapture
+        PASS [   1.258s] (33/51) blox::end_to_end next_hold
+       START [         ] (34/51) blox::end_to_end o_rotate
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact o_rotate --nocapture
+        PASS [   0.115s] (34/51) blox::end_to_end o_rotate
+       START [         ] (35/51) blox::end_to_end random_bag_impl1
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact random_bag_impl1 --nocapture
+        PASS [   0.010s] (35/51) blox::end_to_end random_bag_impl1
+       START [         ] (36/51) blox::end_to_end random_bag_impl2
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact random_bag_impl2 --nocapture
+        PASS [   0.008s] (36/51) blox::end_to_end random_bag_impl2
+       START [         ] (37/51) blox::end_to_end random_bag_impl3
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact random_bag_impl3 --nocapture
+        PASS [   0.008s] (37/51) blox::end_to_end random_bag_impl3
+       START [         ] (38/51) blox::end_to_end s_rotate
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact s_rotate --nocapture
+        PASS [   0.114s] (38/51) blox::end_to_end s_rotate
+       START [         ] (39/51) blox::end_to_end score_deterministic
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact score_deterministic --nocapture
+        PASS [   7.258s] (39/51) blox::end_to_end score_deterministic
+       START [         ] (40/51) blox::end_to_end score_deterministic2
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact score_deterministic2 --nocapture
+        PASS [   7.897s] (40/51) blox::end_to_end score_deterministic2
+       START [         ] (41/51) blox::end_to_end score_deterministic3
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact score_deterministic3 --nocapture
+        PASS [  10.112s] (41/51) blox::end_to_end score_deterministic3
+       START [         ] (42/51) blox::end_to_end score_deterministic4
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact score_deterministic4 --nocapture
+        PASS [  14.328s] (42/51) blox::end_to_end score_deterministic4
+       START [         ] (43/51) blox::end_to_end shift1
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact shift1 --nocapture
+        PASS [   0.108s] (43/51) blox::end_to_end shift1
+       START [         ] (44/51) blox::end_to_end shift2
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact shift2 --nocapture
+        PASS [   0.112s] (44/51) blox::end_to_end shift2
+       START [         ] (45/51) blox::end_to_end shift3
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact shift3 --nocapture
+        PASS [   0.122s] (45/51) blox::end_to_end shift3
+       START [         ] (46/51) blox::end_to_end shift4
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact shift4 --nocapture
+        PASS [   0.123s] (46/51) blox::end_to_end shift4
+       START [         ] (47/51) blox::end_to_end shift5
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact shift5 --nocapture
+        PASS [   0.192s] (47/51) blox::end_to_end shift5
+       START [         ] (48/51) blox::end_to_end shift_and_rotate
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact shift_and_rotate --nocapture
+        PASS [   0.147s] (48/51) blox::end_to_end shift_and_rotate
+       START [         ] (49/51) blox::end_to_end t_rotate
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact t_rotate --nocapture
+        PASS [   0.117s] (49/51) blox::end_to_end t_rotate
+       START [         ] (50/51) blox::end_to_end z_rotate
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact z_rotate --nocapture
+        PASS [   0.114s] (50/51) blox::end_to_end z_rotate
+       START [         ] (51/51) blox::end_to_end z_rotate_hold_arrow
+             command: /home/ubuntu/rust-tetris-game/target/debug/deps/end_to_end-2c33eee815289240 --exact z_rotate_hold_arrow --nocapture
+        PASS [   0.097s] (51/51) blox::end_to_end z_rotate_hold_arrow
+────────────
+     Summary [ 140.759s] 51 tests run: 51 passed, 0 skipped
