@@ -35,6 +35,10 @@ Feature order:
 6. [Hard Drop](./06-hard-drop.md)
 7. [Hold](./07-hold.md)
 
+Extra reading:
+
+1. [How Tests Work](./08-how-tests-work.md)
+
 Suggested check after every feature:
 
 ```bash
